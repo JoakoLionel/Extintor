@@ -208,10 +208,41 @@ function renderRecords(){
  host.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const a=loadRecords();a.splice(+b.dataset.delete,1);localStorage.setItem('extintorscan_records',JSON.stringify(a));renderRecords();});
 }
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-$('saveBtn').onclick=()=>{
- const r=collect(); if(!r.id&&!r.manufacturer){setStatus('Completá al menos el identificador o el fabricante antes de guardar.','warn');return;}
- const a=loadRecords(); const idx=r.id?a.findIndex(x=>x.id===r.id):-1;if(idx>=0)a[idx]=r;else a.unshift(r);
- localStorage.setItem('extintorscan_records',JSON.stringify(a));currentRecord=r;renderRecords();setStatus('Ficha guardada en este navegador.','ok');
+// Pega aquí la URL que copiaste en el Paso 2
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxv80TOdg9-o2vHTm5aV_nBQKrw2Z6gvAzml63Cvwm_UZL6V27sJXsXuCsCT4YrUSPF/exec';
+
+$('saveBtn').onclick = async () => {
+  const r = collect(); 
+  if (!r.id && !r.manufacturer) {
+    setStatus('Completá al menos el identificador o el fabricante antes de guardar.', 'warn');
+    return;
+  }
+
+  // 1. Guardar localmente en el navegador
+  const a = loadRecords(); 
+  const idx = r.id ? a.findIndex(x => x.id === r.id) : -1;
+  if (idx >= 0) a[idx] = r; else a.unshift(r);
+  localStorage.setItem('extintorscan_records', JSON.stringify(a));
+  currentRecord = r;
+  renderRecords();
+
+  // 2. Enviar a la Planilla de Google Sheets
+  if (GOOGLE_SCRIPT_URL && !GOOGLE_SCRIPT_URL.includes('AQUI_PEGA')) {
+    setStatus('Guardando ficha en el navegador y enviando a Google Sheets…');
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Evita bloqueos de CORS desde el navegador
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(r)
+      });
+      setStatus('Ficha guardada localmente y enviada a Google Sheets con éxito.', 'ok');
+    } catch (err) {
+      setStatus('Se guardó en el navegador, pero falló el envío a Google Sheets.', 'warn');
+    }
+  } else {
+    setStatus('Ficha guardada en este navegador.', 'ok');
+  }
 };
 function downloadJSON(data,name){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 $('exportBtn').onclick=()=>downloadJSON(collect(),'ficha-extintor.json');
