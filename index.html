@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ExtintorScan — Registro inteligente de extintores</title>
+<style>
+:root{--bg:#f4f7fb;--card:#fff;--ink:#172033;--muted:#667085;--line:#dce3ed;--accent:#b42318;--accent2:#7a271a;--ok:#067647;--warn:#b54708;--blue:#175cd3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+header{background:linear-gradient(120deg,#7a271a,#b42318);color:white;padding:28px 18px}
+.wrap{max-width:1100px;margin:auto;padding:0 18px}
+.brand{display:flex;gap:14px;align-items:center}.logo{font-size:30px;background:#ffffff20;border-radius:14px;padding:10px 14px}
+h1{font-size:clamp(25px,4vw,36px);margin:0}header p{margin:5px 0 0;color:#ffe4e1}
+main{padding:22px 0 42px}.layout{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 5px 18px #1018280a}
+h2{font-size:19px;margin:0 0 12px}h3{font-size:15px;margin:18px 0 8px}
+.muted{color:var(--muted)}.small{font-size:13px}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px}
+button,.button{border:0;border-radius:10px;padding:10px 14px;font-weight:650;cursor:pointer;background:var(--accent);color:#fff;font-size:14px}
+button.secondary{background:#f2f4f7;color:#344054;border:1px solid var(--line)}button.outline{background:white;color:var(--accent);border:1px solid #f0b8b3}
+button:disabled{opacity:.55;cursor:not-allowed}input[type=file]{display:block;width:100%;padding:12px;border:1px dashed #98a2b3;border-radius:10px;background:#fcfcfd}
+#preview{width:100%;max-height:350px;object-fit:contain;background:#f2f4f7;border-radius:12px;margin-top:12px;display:none}
+#camera{width:100%;background:#111;border-radius:12px;display:none;margin-top:12px;max-height:350px}
+.progress{height:8px;background:#eaecf0;border-radius:20px;overflow:hidden;margin:10px 0}.bar{height:100%;width:0;background:var(--accent);transition:width .2s}
+.status{padding:10px 12px;border-radius:10px;background:#f2f4f7;color:#475467;margin-top:12px}
+.status.ok{background:#ecfdf3;color:#067647}.status.warn{background:#fffaeb;color:#93370d}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-weight:650;font-size:13px;color:#344054;margin-bottom:5px}
+input[type=text],input[type=date],select,textarea{width:100%;border:1px solid #cfd7e3;border-radius:9px;padding:10px;font:inherit;background:#fff;color:var(--ink)}
+textarea{min-height:140px;resize:vertical}.wide{grid-column:1/-1}
+.badges{display:flex;gap:7px;flex-wrap:wrap}.badge{font-size:12px;padding:4px 9px;border-radius:999px;background:#eff8ff;color:#175cd3}
+.badge.good{background:#ecfdf3;color:#067647}.badge.warn{background:#fffaeb;color:#b54708}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:9px;border-bottom:1px solid var(--line)}th{color:#475467}
+footer{padding:20px 0;color:var(--muted);font-size:12px}
+.hidden{display:none!important}.divider{height:1px;background:var(--line);margin:16px 0}
+@media(max-width:780px){.layout{grid-template-columns:1fr}.fields{grid-template-columns:1fr}.wide{grid-column:auto}}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand"><div class="logo">🧯</div><div><h1>ExtintorScan</h1><p>Lectura asistida de etiquetas y registro de extintores</p></div></div>
+</div></header>
+<main class="wrap">
+  <div class="layout">
+    <section class="card">
+      <h2>1. Capturar etiqueta</h2>
+      <p class="muted small">Subí una foto clara o usá la cámara. Para mejores resultados, encuadrá la etiqueta completa, con buena luz y sin reflejos.</p>
+      <input id="fileInput" type="file" accept="image/*">
+      <img id="preview" alt="Vista previa de la imagen seleccionada">
+      <video id="camera" autoplay playsinline></video>
+      <div class="actions">
+        <button id="startCamera" class="secondary" type="button">Abrir cámara</button>
+        <button id="capture" class="secondary hidden" type="button">Tomar foto</button>
+        <button id="stopCamera" class="secondary hidden" type="button">Cerrar cámara</button>
+        <button id="readBtn" type="button" disabled>Leer etiqueta (OCR)</button>
+      </div>
+      <div class="progress"><div id="bar" class="bar"></div></div>
+      <div id="status" class="status" role="status">Elegí una imagen para comenzar.</div>
+      <p class="small muted">El OCR se ejecuta en el navegador mediante Tesseract.js. La primera vez necesita conexión a Internet para cargar la biblioteca y los datos del idioma.</p>
+    </section>
+    <section class="card">
+      <h2>2. Resultado del reconocimiento</h2>
+      <div id="recognitionBadges" class="badges"><span class="badge">A la espera de una imagen</span></div>
+      <h3>Texto leído</h3>
+      <textarea id="rawText" placeholder="El texto reconocido aparecerá acá. También podés pegarlo o corregirlo manualmente."></textarea>
+      <div class="actions">
+        <button id="parseBtn" class="secondary" type="button">Interpretar texto</button>
+        <button id="clearBtn" class="secondary" type="button">Limpiar</button>
+      </div>
+    </section>
+  </div>
+
+  <section class="card" style="margin-top:18px">
+    <h2>3. Ficha del extintor</h2>
+    <p class="muted small">Los campos se completan automáticamente cuando el programa encuentra datos reconocibles. Revisalos antes de guardar: el OCR puede confundir letras, números y fechas.</p>
+    <form id="recordForm">
+      <div class="fields">
+        <div><label for="id">Identificador único</label><input id="id" type="text" placeholder="Ej. 81174"></div>
+        <div><label for="control">Tarjeta / número de control</label><input id="control" type="text" placeholder="Número de control"></div>
+        <div><label for="manufacturer">Fabricante</label><input id="manufacturer" type="text" placeholder="Fabricante"></div>
+        <div><label for="refiller">Empresa recargadora</label><input id="refiller" type="text" placeholder="Recargadora habilitada"></div>
+        <div><label for="agent">Agente extintor</label><input id="agent" type="text" placeholder="Ej. ABC, CO₂, HCFC"></div>
+        <div><label for="capacity">Capacidad</label><input id="capacity" type="text" placeholder="Ej. 5 Kg/Lts"></div>
+        <div><label for="classes">Clases de fuego</label><input id="classes" type="text" placeholder="Ej. A, B, C"></div>
+        <div><label for="certification">Certificación / norma</label><input id="certification" type="text" placeholder="IRAM, organismo, registro"></div>
+        <div class="wide"><label for="location">Ubicación</label><input id="location" type="text" placeholder="Dirección o sector donde está instalado"></div>
+        <div><label for="manufactureDate">Año de fabricación</label><input id="manufactureDate" type="text" placeholder="Ej. 2008"></div>
+        <div><label for="maintenance">Próximo mantenimiento / recarga</label><input id="maintenance" type="text" placeholder="Ej. 08/2027"></div>
+        <div><label for="usefulLife">Vida útil</label><input id="usefulLife" type="text" placeholder="Ej. 2028"></div>
+        <div><label for="hydroTest">Prueba hidráulica</label><input id="hydroTest" type="text" placeholder="Ej. 08/2028"></div>
+      </div>
+      <div class="actions">
+        <button id="saveBtn" type="button">Guardar ficha</button>
+        <button id="exportBtn" type="button" class="outline">Exportar ficha JSON</button>
+        <button id="printBtn" type="button" class="secondary">Imprimir ficha</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <h2>4. Registros guardados en este navegador</h2>
+    <p class="muted small">Los registros se guardan localmente en este navegador; no se envían a un servidor. No uses este listado como único registro oficial de seguridad.</p>
+    <div id="records"><p class="muted">Todavía no hay fichas guardadas.</p></div>
+    <div class="actions"><button id="downloadAll" class="secondary" type="button">Descargar todos (JSON)</button></div>
+  </section>
+  <section class="card" style="margin-top:18px">
+    <h2>Cómo funciona el modelo incremental</h2>
+    <div class="fields">
+      <div><span class="badge good">Incremento 1</span><p>Captura de imagen desde archivo o cámara.</p></div>
+      <div><span class="badge good">Incremento 2</span><p>OCR para leer el texto de la etiqueta.</p></div>
+      <div><span class="badge good">Incremento 3</span><p>Interpretación de campos conocidos y revisión manual.</p></div>
+      <div><span class="badge good">Incremento 4</span><p>Guardado local y exportación de fichas.</p></div>
+    </div>
+  </section>
+  <footer>ExtintorScan · Prototipo educativo. No certifica el estado del extintor ni reemplaza la revisión de un profesional habilitado.</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let selectedImage = null, stream = null, currentRecord = null;
+const fieldIds = ['id','control','manufacturer','refiller','agent','capacity','classes','certification','location','manufactureDate','maintenance','usefulLife','hydroTest'];
+const aliases = {
+ id: [/identificador(?:\s+unico)?\s*[:#-]?\s*([A-Z0-9-]{3,})/i, /(?:ID|N[º°o.]?\s*de\s*extintor)\s*[:#-]?\s*([A-Z0-9-]{3,})/i],
+ control: [/(?:tarjeta\s+de\s+control|n[uú]mero\s+de\s+control|control)\s*[:#-]?\s*([A-Z0-9 -]{5,})/i],
+ manufacturer: [/(?:fabricante|fabricado\s+por)\s*[:#-]?\s*([^\n,;]{3,60})/i],
+ refiller: [/(?:recargadora|recarga(?:do\s+por)?|empresa\s+de\s+recarga)\s*[:#-]?\s*([^\n,;]{3,70})/i],
+ agent: [/(?:agente\s+extintor|agente)\s*[:#-]?\s*([^\n,;]{2,40})/i, /\b(ABC|BC|CO2|CO₂|HALOCLEAN|HCFC|PQS|ESPUMA)\b/i],
+ capacity: [/(?:capacidad|contenido|carga)\s*[:#-]?\s*([0-9]+(?:[.,][0-9]+)?\s*(?:kg|kgs|kilogramos?|l|lts?|litros?))/i, /\b([0-9]+\s*(?:kg|kgs|l|lts?))\b/i],
+ classes: [/(?:clases?\s+de\s+fuego|fuegos?)\s*[:#-]?\s*([ABC\s,/-]{1,15})/i, /\b(?:CLASES?\s*)?\b(A\s*[,/]\s*B\s*[,/]?\s*C|A\s+B\s+C|A\s*[,/]\s*B|B\s*[,/]\s*C)\b/i],
+ certification: [/(?:certificaci[oó]n|norma|IRAM|Bureau\s+Veritas)[^\n]{0,90}/i],
+ location: [/(?:ubicaci[oó]n|direcci[oó]n|domicilio)\s*[:#-]?\s*([^\n]{3,90})/i],
+ manufactureDate: [/(?:año\s+de\s+fabricaci[oó]n|fabricaci[oó]n)\s*[:#-]?\s*((?:19|20)\d{2})/i],
+ maintenance: [/(?:pr[oó]ximo\s+mantenimiento|pr[oó]xima\s+recarga|mantenimiento|recarga)\s*[:#-]?\s*((?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2}|(?:19|20)\d{2})/i],
+ usefulLife: [/(?:vida\s+[uú]til|vencimiento)\s*[:#-]?\s*((?:19|20)\d{2}|(?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2})/i],
+ hydroTest: [/(?:prueba\s+hidr[aá]ulica|prueba\s+hidrost[aá]tica)\s*[:#-]?\s*((?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2}|(?:19|20)\d{2})/i]
+};
+function setStatus(msg, kind=''){ $('status').textContent=msg; $('status').className='status '+kind; }
+function clean(v){return (v||'').replace(/[|]+/g,' ').replace(/\s+/g,' ').trim().replace(/[.,;:]$/,'');}
+function setField(id,val){ if(val && !$ (id).value.trim()) $(id).value=clean(val); }
+function parseText(){
+ const t=$('rawText').value.replace(/\r/g,'\n');
+ let found=0;
+ for(const field of fieldIds){
+   for(const re of aliases[field]||[]){
+     const m=t.match(re);
+     if(m){const val=clean(m[1]||m[0]); if(val){if(!$ (field).value.trim()) $(field).value=val; found++; break;}}
+   }
+ }
+ // Context-aware fallback patterns for common label wording.
+ if(! $('manufacturer').value) {
+   const m=t.match(/(?:Matafuegos\s+[A-ZÁÉÍÓÚÑ][^\n]{2,55}|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ .&-]{2,45}\s+S\.?R\.?L\.?)/);
+   if(m){$('manufacturer').value=clean(m[0]);found++;}
+ }
+ if(! $('certification').value && /Bureau\s+Veritas|IRAM/i.test(t)){
+   const lines=t.split('\n').map(clean).filter(x=>/Bureau\s+Veritas|IRAM/i.test(x));
+   if(lines.length){$('certification').value=lines.slice(0,2).join(' — ');found++;}
+ }
+ const isLikely=/extintor|matafuego|IRAM|agente extintor|clase.?[ABC]|recargadora|HCFC|haloclean/i.test(t);
+ const badges=[];
+ badges.push(`<span class="badge ${isLikely?'good':'warn'}">${isLikely?'Posible etiqueta de extintor':'No se confirmó que sea un extintor'}</span>`);
+ if(found) badges.push(`<span class="badge good">${found} coincidencia(s) encontrada(s)</span>`);
+ else badges.push('<span class="badge warn">No se encontraron campos con formato reconocible</span>');
+ $('recognitionBadges').innerHTML=badges.join('');
+ setStatus(found?`Interpretación terminada: se detectaron ${found} coincidencia(s). Revisá los campos resaltados manualmente.`:'No se pudieron extraer datos con seguridad. Podés completar la ficha a mano.', found?'ok':'warn');
+}
+$('fileInput').addEventListener('change', e=>{
+ const f=e.target.files[0]; if(!f)return;
+ if(!f.type.startsWith('image/')){setStatus('El archivo debe ser una imagen.','warn');return;}
+ selectedImage=f; const url=URL.createObjectURL(f); $('preview').src=url;$('preview').style.display='block';$('readBtn').disabled=false;
+ $('camera').style.display='none'; setStatus('Imagen cargada. Ahora podés leer la etiqueta.','ok');
+});
+$('startCamera').onclick=async()=>{
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  $('camera').srcObject=stream;$('camera').style.display='block';$('capture').classList.remove('hidden');$('stopCamera').classList.remove('hidden');$('preview').style.display='none';
+  setStatus('Cámara activa. Encuadrá la etiqueta y tomá una foto.');
+ }catch(e){setStatus('No se pudo abrir la cámara. Revisá los permisos o usá una imagen.','warn');}
+};
+$('capture').onclick=()=>{
+ const v=$('camera'), c=document.createElement('canvas'); c.width=v.videoWidth;c.height=v.videoHeight;
+ c.getContext('2d').drawImage(v,0,0);c.toBlob(blob=>{selectedImage=blob;$('preview').src=URL.createObjectURL(blob);$('preview').style.display='block';$('readBtn').disabled=false;stopCamera();setStatus('Foto capturada. Ya podés leer la etiqueta.','ok');},'image/jpeg',.92);
+};
+function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}$('camera').style.display='none';$('capture').classList.add('hidden');$('stopCamera').classList.add('hidden');}
+$('stopCamera').onclick=stopCamera;
+$('readBtn').onclick=async()=>{
+ if(!selectedImage)return;
+ if(!window.Tesseract){setStatus('No se pudo cargar el OCR. Comprobá tu conexión a Internet y recargá la página.','warn');return;}
+ $('readBtn').disabled=true;setStatus('Leyendo imagen… puede tardar unos segundos.');$('bar').style.width='4%';
+ try{
+  const result=await Tesseract.recognize(selectedImage,'spa+eng',{logger:m=>{if(m.status==='recognizing text'){$('bar').style.width=Math.round(m.progress*100)+'%';setStatus('Reconociendo texto: '+Math.round(m.progress*100)+'%');}}});
+  $('rawText').value=(result.data.text||'').trim();$('bar').style.width='100%';parseText();
+  if(!$('rawText').value) setStatus('No se detectó texto legible. Probá con más luz y acercando la cámara a la etiqueta.','warn');
+ }catch(err){setStatus('Ocurrió un error al leer la imagen. Probá otra foto.','warn');}
+ finally{$('readBtn').disabled=false;}
+};
+$('parseBtn').onclick=parseText;
+$('clearBtn').onclick=()=>{
+ $('rawText').value='';fieldIds.forEach(id=>$(id).value='');$('recognitionBadges').innerHTML='<span class="badge">A la espera de una imagen</span>';$('bar').style.width='0%';setStatus('Campos limpiados. Elegí otra imagen para comenzar.');
+};
+function collect(){const o={};fieldIds.forEach(id=>o[id]=$(id).value.trim());o.rawText=$('rawText').value.trim();o.savedAt=new Date().toISOString();return o;}
+function loadRecords(){try{return JSON.parse(localStorage.getItem('extintorscan_records')||'[]')}catch(e){return []}}
+function renderRecords(){
+ const records=loadRecords(); const host=$('records');
+ if(!records.length){host.innerHTML='<p class="muted">Todavía no hay fichas guardadas.</p>';return;}
+ host.innerHTML='<table><thead><tr><th>ID</th><th>Fabricante</th><th>Agente</th><th>Recarga/mantenimiento</th><th>Acción</th></tr></thead><tbody>'+
+ records.map((r,i)=>`<tr><td>${esc(r.id||'—')}</td><td>${esc(r.manufacturer||'—')}</td><td>${esc(r.agent||'—')}</td><td>${esc(r.maintenance||'—')}</td><td><button class="secondary" data-load="${i}" type="button">Abrir</button> <button class="secondary" data-delete="${i}" type="button">Borrar</button></td></tr>`).join('')+
+ '</tbody></table>';
+ host.querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>{const r=loadRecords()[+b.dataset.load];fieldIds.forEach(id=>$(id).value=r[id]||'');$('rawText').value=r.rawText||'';currentRecord=r;window.scrollTo({top:0,behavior:'smooth'});setStatus('Ficha cargada para revisar.');});
+ host.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const a=loadRecords();a.splice(+b.dataset.delete,1);localStorage.setItem('extintorscan_records',JSON.stringify(a));renderRecords();});
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+$('saveBtn').onclick=()=>{
+ const r=collect(); if(!r.id&&!r.manufacturer){setStatus('Completá al menos el identificador o el fabricante antes de guardar.','warn');return;}
+ const a=loadRecords(); const idx=r.id?a.findIndex(x=>x.id===r.id):-1;if(idx>=0)a[idx]=r;else a.unshift(r);
+ localStorage.setItem('extintorscan_records',JSON.stringify(a));currentRecord=r;renderRecords();setStatus('Ficha guardada en este navegador.','ok');
+};
+function downloadJSON(data,name){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+$('exportBtn').onclick=()=>downloadJSON(collect(),'ficha-extintor.json');
+$('downloadAll').onclick=()=>downloadJSON(loadRecords(),'registros-extintorscan.json');
+$('printBtn').onclick=()=>window.print();
+renderRecords();
+</script>
+</body>
+</html>
