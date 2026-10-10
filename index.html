@@ -55,7 +55,7 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
       </div>
       <div class="progress"><div id="bar" class="bar"></div></div>
       <div id="status" class="status" role="status">Elegí una imagen para comenzar.</div>
-      <p class="small muted">El OCR se ejecuta en el navegador mediante Tesseract.js y la detección de QR mediante jsQR.</p>
+      <p class="small muted">El OCR se ejecuta en el navegador mediante Tesseract.js y la lectura QR mediante jsQR.</p>
     </section>
     <section class="card">
       <h2>2. Resultado del reconocimiento</h2>
@@ -98,7 +98,7 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
 
   <section class="card" style="margin-top:18px">
     <h2>4. Registros guardados en este navegador</h2>
-    <p class="muted small">Los registros se guardan localmente en este navegador; no se envían a un servidor. No uses este listado como único registro oficial de seguridad.</p>
+    <p class="muted small">Los registros se guardan localmente en este navegador y se envían a Google Sheets.</p>
     <div id="records"><p class="muted">Todavía no hay fichas guardadas.</p></div>
     <div class="actions"><button id="downloadAll" class="secondary" type="button">Descargar todos (JSON)</button></div>
   </section>
@@ -113,8 +113,10 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
   </section>
   <footer>ExtintorScan · Prototipo educativo. No certifica el estado del extintor ni reemplaza la revisión de un profesional habilitado.</footer>
 </main>
+
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
 <script>
 const $ = id => document.getElementById(id);
 let selectedImage = null, stream = null, currentRecord = null;
@@ -134,22 +136,26 @@ const aliases = {
  usefulLife: [/(?:vida\s+[uú]til|vencimiento)\s*[:#-]?\s*((?:19|20)\d{2}|(?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2})/i],
  hydroTest: [/(?:prueba\s+hidr[aá]ulica|prueba\s+hidrost[aá]tica)\s*[:#-]?\s*((?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2}|(?:19|20)\d{2})/i]
 };
+
 function setStatus(msg, kind=''){ $('status').textContent=msg; $('status').className='status '+kind; }
 function clean(v){return (v||'').replace(/[|]+/g,' ').replace(/\s+/g,' ').trim().replace(/[.,;:]$/,'');}
-function setField(id,val){ if(val && !$(id).value.trim())$(id).value=clean(val); }
 
 function scanQRFromImage(imgElement) {
   try {
     if (!window.jsQR) return null;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = imgElement.naturalWidth || imgElement.width;
-    canvas.height = imgElement.naturalHeight || imgElement.height;
-    ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const w = imgElement.naturalWidth || imgElement.width || 300;
+    const h = imgElement.naturalHeight || imgElement.height || 300;
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(imgElement, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
     return code ? code.data : null;
-  } catch(e) { return null; }
+  } catch(e) { 
+    return null; 
+  }
 }
 
 function parseText(){
@@ -158,14 +164,21 @@ function parseText(){
  for(const field of fieldIds){
    for(const re of aliases[field]||[]){
      const m=t.match(re);
-     if(m){const val=clean(m[1]||m[0]); if(val){if(!$(field).value.trim())$(field).value=val; found++; break;}}
+     if(m){
+       const val=clean(m[1]||m[0]); 
+       if(val){
+         if(!$(field).value.trim())$(field).value=val; 
+         found++; 
+         break;
+       }
+     }
    }
  }
- if(! $('manufacturer').value) {
+ if(!$('manufacturer').value) {
    const m=t.match(/(?:Matafuegos\s+[A-ZÁÉÍÓÚÑ][^\n]{2,55}|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ .&-]{2,45}\s+S\.?R\.?L\.?)/);
    if(m){$('manufacturer').value=clean(m[0]);found++;}
  }
- if(! $('certification').value && /Bureau\s+Veritas|IRAM/i.test(t)){
+ if(!$('certification').value && /Bureau\s+Veritas|IRAM/i.test(t)){
    const lines=t.split('\n').map(clean).filter(x=>/Bureau\s+Veritas|IRAM/i.test(x));
    if(lines.length){$('certification').value=lines.slice(0,2).join(' — ');found++;}
  }
@@ -177,12 +190,18 @@ function parseText(){
  $('recognitionBadges').innerHTML=badges.join('');
  setStatus(found?`Interpretación terminada: se detectaron ${found} coincidencia(s). Revisá los campos resaltados manualmente.`:'No se pudieron extraer datos con seguridad. Podés completar la ficha a mano.', found?'ok':'warn');
 }
+
 $('fileInput').addEventListener('change', e=>{
  const f=e.target.files[0]; if(!f)return;
  if(!f.type.startsWith('image/')){setStatus('El archivo debe ser una imagen.','warn');return;}
- selectedImage=f; const url=URL.createObjectURL(f); $('preview').src=url;$('preview').style.display='block';$('readBtn').disabled=false;
- $('camera').style.display='none'; setStatus('Imagen cargada. Ahora podés leer la etiqueta.','ok');
+ selectedImage=f; 
+ const url=URL.createObjectURL(f); 
+ $('preview').src=url;
+ $('preview').style.display='block';$('readBtn').disabled=false;
+ $('camera').style.display='none'; 
+ setStatus('Imagen cargada. Ahora podés leer la etiqueta.','ok');
 });
+
 $('startCamera').onclick=async()=>{
  try{
   stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
@@ -190,14 +209,31 @@ $('startCamera').onclick=async()=>{
   setStatus('Cámara activa. Encuadrá la etiqueta y tomá una foto.');
  }catch(e){setStatus('No se pudo abrir la cámara. Revisá los permisos o usá una imagen.','warn');}
 };
+
 $('capture').onclick=()=>{
  const v=$('camera'), c=document.createElement('canvas'); c.width=v.videoWidth;c.height=v.videoHeight;
- c.getContext('2d').drawImage(v,0,0);c.toBlob(blob=>{selectedImage=blob;$('preview').src=URL.createObjectURL(blob);$('preview').style.display='block';$('readBtn').disabled=false;stopCamera();setStatus('Foto capturada. Ya podés leer la etiqueta.','ok');},'image/jpeg',.92);
+ c.getContext('2d').drawImage(v,0,0);
+ c.toBlob(blob=>{
+   selectedImage=blob;
+   $('preview').src=URL.createObjectURL(blob);
+   $('preview').style.display='block';$('readBtn').disabled=false;
+   stopCamera();
+   setStatus('Foto capturada. Ya podés leer la etiqueta.','ok');
+ },'image/jpeg',.92);
 };
-function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}$('camera').style.display='none';$('capture').classList.add('hidden');$('stopCamera').classList.add('hidden');}$('stopCamera').onclick=stopCamera;
+
+function stopCamera(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  $('camera').style.display='none';
+  $('capture').classList.add('hidden');$('stopCamera').classList.add('hidden');
+}
+$('stopCamera').onclick=stopCamera;
+
 $('readBtn').onclick=async()=>{
  if(!selectedImage)return;
- $('readBtn').disabled=true;setStatus('Leyendo imagen… puede tardar unos segundos.');$('bar').style.width='4%';
+ $('readBtn').disabled=true;
+ setStatus('Leyendo imagen… puede tardar unos segundos.');
+ $('bar').style.width='4%';
 
  const qrResult = scanQRFromImage($('preview'));
  if(qrResult) {
@@ -209,19 +245,36 @@ $('readBtn').onclick=async()=>{
    return;
  }
 
- if(!window.Tesseract){setStatus('No se pudo cargar el OCR. Comprobá tu conexión a Internet y recargá la página.','warn');$('readBtn').disabled=false;return;}
+ if(!window.Tesseract){
+   setStatus('No se pudo cargar el OCR. Comprobá tu conexión a Internet y recargá la página.','warn');
+   $('readBtn').disabled=false;
+   return;
+ }
  try{
   const result=await Tesseract.recognize(selectedImage,'spa+eng',{logger:m=>{if(m.status==='recognizing text'){$('bar').style.width=Math.round(m.progress*100)+'%';setStatus('Reconociendo texto: '+Math.round(m.progress*100)+'%');}}});
-  $('rawText').value=(result.data.text\vert{}\vert{}'').trim();$('bar').style.width='100%';parseText();
+  $('rawText').value=(result.data.text\vert{}\vert{}'').trim();$('bar').style.width='100%';
+  parseText();
   if(!$('rawText').value) setStatus('No se detectó texto legible. Probá con más luz y acercando la cámara a la etiqueta.','warn');
  }catch(err){setStatus('Ocurrió un error al leer la imagen. Probá otra foto.','warn');}
  finally{$('readBtn').disabled=false;}
 };
+
 $('parseBtn').onclick=parseText;
-$('clearBtn').onclick=()=>{$('rawText').value='';fieldIds.forEach(id=>$(id).value='');$('recognitionBadges').innerHTML='<span class="badge">A la espera de una imagen</span>';$('bar').style.width='0%';setStatus('Campos limpiados. Elegí otra imagen para comenzar.');
+$('clearBtn').onclick=()=>{$('rawText').value='';fieldIds.forEach(id=>$(id).value='');$('recognitionBadges').innerHTML='<span class="badge">A la espera de una imagen</span>';
+ $('bar').style.width='0%';
+ setStatus('Campos limpiados. Elegí otra imagen para comenzar.');
 };
-function collect(){const o={};fieldIds.forEach(id=>o[id]=$(id).value.trim());o.rawText=$('rawText').value.trim();o.savedAt=new Date().toISOString();return o;}
+
+function collect(){
+  const o={};
+  fieldIds.forEach(id=>o[id]=$(id).value.trim());
+  o.rawText=$('rawText').value.trim();
+  o.savedAt=new Date().toISOString();
+  return o;
+}
+
 function loadRecords(){try{return JSON.parse(localStorage.getItem('extintorscan_records')||'[]')}catch(e){return []}}
+
 function renderRecords(){
  const records=loadRecords(); const host=$('records');
  if(!records.length){host.innerHTML='<p class="muted">Todavía no hay fichas guardadas.</p>';return;}
@@ -231,6 +284,7 @@ function renderRecords(){
  host.querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>{const r=loadRecords()[+b.dataset.load];fieldIds.forEach(id=>$(id).value=r[id]\vert{}\vert{}'');$('rawText').value=r.rawText||'';currentRecord=r;window.scrollTo({top:0,behavior:'smooth'});setStatus('Ficha cargada para revisar.');});
  host.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const a=loadRecords();a.splice(+b.dataset.delete,1);localStorage.setItem('extintorscan_records',JSON.stringify(a));renderRecords();});
 }
+
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxv80TOdg9-o2vHTm5aV_nBQKrw2Z6gvAzml63Cvwm_UZL6V27sJXsXuCsCT4YrUSPF/exec';
@@ -256,7 +310,7 @@ $('saveBtn').onclick = async () => {
     try {
       await fetch(GOOGLE_SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', // Evita bloqueos de CORS desde el navegador
+        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(r)
       });
@@ -268,6 +322,7 @@ $('saveBtn').onclick = async () => {
     setStatus('Ficha guardada en este navegador.', 'ok');
   }
 };
+
 function downloadJSON(data,name){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
 $('exportBtn').onclick=()=>downloadJSON(collect(),'ficha-extintor.json');
 $('downloadAll').onclick=()=>downloadJSON(loadRecords(),'registros-extintorscan.json');$('printBtn').onclick=()=>window.print();
