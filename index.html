@@ -21,7 +21,7 @@ button:disabled{opacity:.55;cursor:not-allowed}input[type=file]{display:block;wi
 #preview{width:100%;max-height:350px;object-fit:contain;background:#f2f4f7;border-radius:12px;margin-top:12px;display:none}
 #camera{width:100%;background:#111;border-radius:12px;display:none;margin-top:12px;max-height:350px}
 .progress{height:8px;background:#eaecf0;border-radius:20px;overflow:hidden;margin:10px 0}.bar{height:100%;width:0;background:var(--accent);transition:width .2s}
-.status{padding:10px 12px;border-radius:10px;background:#f2f4f7;color:#475467;margin-top:12px;word-wrap:break-word}
+.status{padding:10px 12px;border-radius:10px;background:#f2f4f7;color:#475467;margin-top:12px}
 .status.ok{background:#ecfdf3;color:#067647}.status.warn{background:#fffaeb;color:#93370d}
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 label{display:block;font-weight:650;font-size:13px;color:#344054;margin-bottom:5px}
@@ -37,13 +37,13 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
 </head>
 <body>
 <header><div class="wrap">
-  <div class="brand"><div class="logo">🧯</div><div><h1>ExtintorScan</h1><p>Lectura asistida de etiquetas, QR y registro de extintores</p></div></div>
+  <div class="brand"><div class="logo">🧯</div><div><h1>ExtintorScan</h1><p>Lectura asistida de etiquetas y registro de extintores</p></div></div>
 </div></header>
 <main class="wrap">
   <div class="layout">
     <section class="card">
-      <h2>1. Capturar etiqueta o QR</h2>
-      <p class="muted small">Subí una foto clara o usá la cámara del equipo.</p>
+      <h2>1. Capturar etiqueta</h2>
+      <p class="muted small">Subí una foto clara o usá la cámara. Para mejores resultados, encuadrá la etiqueta completa o el código QR.</p>
       <input id="fileInput" type="file" accept="image/*">
       <img id="preview" alt="Vista previa de la imagen seleccionada">
       <video id="camera" autoplay playsinline></video>
@@ -51,17 +51,17 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
         <button id="startCamera" class="secondary" type="button">Abrir cámara</button>
         <button id="capture" class="secondary hidden" type="button">Tomar foto</button>
         <button id="stopCamera" class="secondary hidden" type="button">Cerrar cámara</button>
-        <button id="readBtn" type="button" disabled>Escanear (OCR + QR)</button>
+        <button id="readBtn" type="button" disabled>Leer etiqueta (OCR / QR)</button>
       </div>
       <div class="progress"><div id="bar" class="bar"></div></div>
       <div id="status" class="status" role="status">Elegí una imagen para comenzar.</div>
+      <p class="small muted">El OCR se ejecuta en el navegador mediante Tesseract.js y la detección de QR mediante jsQR.</p>
     </section>
-    
     <section class="card">
       <h2>2. Resultado del reconocimiento</h2>
       <div id="recognitionBadges" class="badges"><span class="badge">A la espera de una imagen</span></div>
-      <h3>Texto o QR leído</h3>
-      <textarea id="rawText" placeholder="El texto reconocido o contenido del QR aparecerá acá."></textarea>
+      <h3>Texto leído</h3>
+      <textarea id="rawText" placeholder="El texto reconocido aparecerá acá. También podés pegarlo o corregirlo manualmente."></textarea>
       <div class="actions">
         <button id="parseBtn" class="secondary" type="button">Interpretar texto</button>
         <button id="clearBtn" class="secondary" type="button">Limpiar</button>
@@ -71,6 +71,7 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
 
   <section class="card" style="margin-top:18px">
     <h2>3. Ficha del extintor</h2>
+    <p class="muted small">Los campos se completan automáticamente cuando el programa encuentra datos reconocibles. Revisalos antes de guardar: el OCR puede confundir letras, números y fechas.</p>
     <form id="recordForm">
       <div class="fields">
         <div><label for="id">Identificador único</label><input id="id" type="text" placeholder="Ej. 81174"></div>
@@ -96,15 +97,24 @@ footer{padding:20px 0;color:var(--muted);font-size:12px}
   </section>
 
   <section class="card" style="margin-top:18px">
-    <h2>4. Registros guardados</h2>
+    <h2>4. Registros guardados en este navegador</h2>
+    <p class="muted small">Los registros se guardan localmente en este navegador; no se envían a un servidor. No uses este listado como único registro oficial de seguridad.</p>
     <div id="records"><p class="muted">Todavía no hay fichas guardadas.</p></div>
     <div class="actions"><button id="downloadAll" class="secondary" type="button">Descargar todos (JSON)</button></div>
   </section>
+  <section class="card" style="margin-top:18px">
+    <h2>Cómo funciona el modelo incremental</h2>
+    <div class="fields">
+      <div><span class="badge good">Incremento 1</span><p>Captura de imagen desde archivo o cámara.</p></div>
+      <div><span class="badge good">Incremento 2</span><p>OCR para leer el texto de la etiqueta o QR.</p></div>
+      <div><span class="badge good">Incremento 3</span><p>Interpretación de campos conocidos y revisión manual.</p></div>
+      <div><span class="badge good">Incremento 4</span><p>Guardado local y exportación de fichas.</p></div>
+    </div>
+  </section>
+  <footer>ExtintorScan · Prototipo educativo. No certifica el estado del extintor ni reemplaza la revisión de un profesional habilitado.</footer>
 </main>
-
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-
 <script>
 const $ = id => document.getElementById(id);
 let selectedImage = null, stream = null, currentRecord = null;
@@ -124,224 +134,143 @@ const aliases = {
  usefulLife: [/(?:vida\s+[uú]til|vencimiento)\s*[:#-]?\s*((?:19|20)\d{2}|(?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2})/i],
  hydroTest: [/(?:prueba\s+hidr[aá]ulica|prueba\s+hidrost[aá]tica)\s*[:#-]?\s*((?:0?[1-9]|1[0-2])[\/-](?:20)?\d{2}|(?:19|20)\d{2})/i]
 };
-
-function setStatus(msg, kind='') { 
-  const el = $('status');
-  el.textContent = msg; 
-  el.className = 'status ' + kind; 
-}
-
-function clean(v) { return (v||'').replace(/[|]+/g,' ').replace(/\s+/g,' ').trim().replace(/[.,;:]$/,''); }
+function setStatus(msg, kind=''){ $('status').textContent=msg; $('status').className='status '+kind; }
+function clean(v){return (v||'').replace(/[|]+/g,' ').replace(/\s+/g,' ').trim().replace(/[.,;:]$/,'');}
+function setField(id,val){ if(val && !$(id).value.trim())$(id).value=clean(val); }
 
 function scanQRFromImage(imgElement) {
   try {
     if (!window.jsQR) return null;
-    const w = imgElement.naturalWidth || imgElement.width;
-    const h = imgElement.naturalHeight || imgElement.height;
-    if (w === 0 || h === 0) return null;
-    
     const canvas = document.createElement('canvas');
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(imgElement, 0, 0, w, h);
-    const imageData = ctx.getImageData(0, 0, w, h);
-    
+    const ctx = canvas.getContext('2d');
+    canvas.width = imgElement.naturalWidth || imgElement.width;
+    canvas.height = imgElement.naturalHeight || imgElement.height;
+    ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const code = jsQR(imageData.data, imageData.width, imageData.height);
     return code ? code.data : null;
   } catch(e) { return null; }
 }
 
 function parseText(){
-  const t = $('rawText').value.replace(/\r/g,'\n');
-  let found = 0;
-  for (const field of fieldIds) {
-    for (const re of aliases[field] || []) {
-      const m = t.match(re);
-      if (m) {
-        const val = clean(m[1] || m[0]);
-        if (val) {
-          if (!$(`\${field}`).value.trim()) $(`\${field}`).value = val;
-          found++; break;
-        }
-      }
-    }
-  }
-  const badges=[];
-  badges.push(`<span class="badge good">${found} coincidencia(s) encontrada(s)</span>`);
-  $('recognitionBadges').innerHTML = badges.join('');
-  setStatus(found ? `Interpretación terminada: ${found} campos completados.` : 'No detectamos campos conocidos.', found ? 'ok' : 'warn');
+ const t=$('rawText').value.replace(/\r/g,'\n');
+ let found=0;
+ for(const field of fieldIds){
+   for(const re of aliases[field]||[]){
+     const m=t.match(re);
+     if(m){const val=clean(m[1]||m[0]); if(val){if(!$(field).value.trim())$(field).value=val; found++; break;}}
+   }
+ }
+ if(! $('manufacturer').value) {
+   const m=t.match(/(?:Matafuegos\s+[A-ZÁÉÍÓÚÑ][^\n]{2,55}|[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ .&-]{2,45}\s+S\.?R\.?L\.?)/);
+   if(m){$('manufacturer').value=clean(m[0]);found++;}
+ }
+ if(! $('certification').value && /Bureau\s+Veritas|IRAM/i.test(t)){
+   const lines=t.split('\n').map(clean).filter(x=>/Bureau\s+Veritas|IRAM/i.test(x));
+   if(lines.length){$('certification').value=lines.slice(0,2).join(' — ');found++;}
+ }
+ const isLikely=/extintor|matafuego|IRAM|agente extintor|clase.?[ABC]|recargadora|HCFC|haloclean/i.test(t);
+ const badges=[];
+ badges.push(`<span class="badge ${isLikely?'good':'warn'}">${isLikely?'Posible etiqueta de extintor':'No se confirmó que sea un extintor'}</span>`);
+ if(found) badges.push(`<span class="badge good">${found} coincidencia(s) encontrada(s)</span>`);
+ else badges.push('<span class="badge warn">No se encontraron campos con formato reconocible</span>');
+ $('recognitionBadges').innerHTML=badges.join('');
+ setStatus(found?`Interpretación terminada: se detectaron ${found} coincidencia(s). Revisá los campos resaltados manualmente.`:'No se pudieron extraer datos con seguridad. Podés completar la ficha a mano.', found?'ok':'warn');
 }
-
-$('fileInput').addEventListener('change', e => {
-  const f = e.target.files[0]; if (!f) return;
-  selectedImage = f;
-  const url = URL.createObjectURL(f);
-  const img = $('preview');
-  img.onload = () => { $('readBtn').disabled = false; setStatus('Imagen cargada. Lista para escanear.','ok'); };
-  img.src = url;
-  img.style.display = 'block';
-  $('camera').style.display = 'none';
+$('fileInput').addEventListener('change', e=>{
+ const f=e.target.files[0]; if(!f)return;
+ if(!f.type.startsWith('image/')){setStatus('El archivo debe ser una imagen.','warn');return;}
+ selectedImage=f; const url=URL.createObjectURL(f); $('preview').src=url;$('preview').style.display='block';$('readBtn').disabled=false;
+ $('camera').style.display='none'; setStatus('Imagen cargada. Ahora podés leer la etiqueta.','ok');
 });
-
-// ABRIR CAMARA SEGURA Y A PRUEBA DE FALLOS
-$('startCamera').onclick = async () => {
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error("El navegador o dispositivo no soporta la cámara web o no estás en una conexión segura.");
-    }
-    setStatus('Iniciando cámara...');
-    
-    // Intenta usar la cámara trasera primero, si falla usa cualquier cámara disponible
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    } catch (err) {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    }
-
-    const video = $('camera');
-    video.srcObject = stream;
-    video.style.display = 'block';
-    video.play();
-    
-    $('capture').classList.remove('hidden');
-    $('stopCamera').classList.remove('hidden');$('preview').style.display = 'none';
-    setStatus('Cámara activa. Enfocá y tomá una foto.', 'ok');
-  } catch (e) {
-    setStatus('Error al abrir la cámara: ' + e.message, 'warn');
-  }
+$('startCamera').onclick=async()=>{
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  $('camera').srcObject=stream;$('camera').style.display='block';$('capture').classList.remove('hidden');$('stopCamera').classList.remove('hidden');$('preview').style.display='none';
+  setStatus('Cámara activa. Encuadrá la etiqueta y tomá una foto.');
+ }catch(e){setStatus('No se pudo abrir la cámara. Revisá los permisos o usá una imagen.','warn');}
 };
-
-$('capture').onclick = () => {
-  const v = $('camera');
-  if (v.videoWidth === 0) {
-    setStatus('Esperá a que la cámara cargue bien la imagen.', 'warn');
-    return;
-  }
-  const c = document.createElement('canvas'); 
-  c.width = v.videoWidth; 
-  c.height = v.videoHeight;
-  c.getContext('2d').drawImage(v, 0, 0);
-  
-  c.toBlob(blob => {
-    selectedImage = blob;
-    const img = $('preview');
-    img.onload = () => { 
-      $('readBtn').disabled = false; 
-      setStatus('Foto tomada con éxito. Ya podés escanear.', 'ok'); 
-      stopCamera();
-    };
-    img.src = URL.createObjectURL(blob);
-    img.style.display = 'block';
-  }, 'image/jpeg', 0.95);
+$('capture').onclick=()=>{
+ const v=$('camera'), c=document.createElement('canvas'); c.width=v.videoWidth;c.height=v.videoHeight;
+ c.getContext('2d').drawImage(v,0,0);c.toBlob(blob=>{selectedImage=blob;$('preview').src=URL.createObjectURL(blob);$('preview').style.display='block';$('readBtn').disabled=false;stopCamera();setStatus('Foto capturada. Ya podés leer la etiqueta.','ok');},'image/jpeg',.92);
 };
+function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}$('camera').style.display='none';$('capture').classList.add('hidden');$('stopCamera').classList.add('hidden');}$('stopCamera').onclick=stopCamera;
+$('readBtn').onclick=async()=>{
+ if(!selectedImage)return;
+ $('readBtn').disabled=true;setStatus('Leyendo imagen… puede tardar unos segundos.');$('bar').style.width='4%';
 
-function stopCamera() {
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  $('camera').style.display = 'none';
-  $('capture').classList.add('hidden');$('stopCamera').classList.add('hidden');
-}
-$('stopCamera').onclick = stopCamera;
+ const qrResult = scanQRFromImage($('preview'));
+ if(qrResult) {
+   $('rawText').value = "QR Detectado:\n" + qrResult;
+   if(!$('id').value) $('id').value = clean(qrResult);$('bar').style.width='100%';
+   parseText();
+   setStatus('Código QR leído con éxito.','ok');
+   $('readBtn').disabled=false;
+   return;
+ }
 
-$('readBtn').onclick = async () => {
-  if (!selectedImage) return;
-  $('readBtn').disabled = true;
-  setStatus('Buscando QR o texto...');
-  $('bar').style.width = '15%';
-
-  // 1. Escaneo seguro de QR
-  const qrResult = scanQRFromImage($('preview'));
-  if (qrResult) {
-    $('rawText').value = "Contenido QR:\n" + qrResult;
-    $('bar').style.width = '100%';
-    if (!$('id').value)$('id').value = clean(qrResult);
-    parseText();
-    setStatus('¡Código QR leído con éxito!', 'ok');
-    $('readBtn').disabled = false;
-    return;
-  }
-
-  // 2. Escaneo OCR
-  if (!window.Tesseract) {
-    setStatus('No se cargó Tesseract. Verificá tu conexión.', 'warn');
-    $('readBtn').disabled = false; return;
-  }
-  try {
-    const result = await Tesseract.recognize(selectedImage, 'spa+eng', {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          $('bar').style.width = Math.round(m.progress * 100) + '%';
-          setStatus('Leyendo texto: ' + Math.round(m.progress * 100) + '%');
-        }
-      }
-    });
-    $('rawText').value = (result.data.text \vert{}\vert{} '').trim();$('bar').style.width = '100%';
-    parseText();
-  } catch (err) {
-    setStatus('Hubo un error analizando la imagen.', 'warn');
-  } finally {
-    $('readBtn').disabled = false;
-  }
+ if(!window.Tesseract){setStatus('No se pudo cargar el OCR. Comprobá tu conexión a Internet y recargá la página.','warn');$('readBtn').disabled=false;return;}
+ try{
+  const result=await Tesseract.recognize(selectedImage,'spa+eng',{logger:m=>{if(m.status==='recognizing text'){$('bar').style.width=Math.round(m.progress*100)+'%';setStatus('Reconociendo texto: '+Math.round(m.progress*100)+'%');}}});
+  $('rawText').value=(result.data.text\vert{}\vert{}'').trim();$('bar').style.width='100%';parseText();
+  if(!$('rawText').value) setStatus('No se detectó texto legible. Probá con más luz y acercando la cámara a la etiqueta.','warn');
+ }catch(err){setStatus('Ocurrió un error al leer la imagen. Probá otra foto.','warn');}
+ finally{$('readBtn').disabled=false;}
 };
-
-$('parseBtn').onclick = parseText;
-$('clearBtn').onclick = () => {$('rawText').value=''; fieldIds.forEach(id => $(id).value='');$('recognitionBadges').innerHTML='<span class="badge">A la espera de una imagen</span>';
-  $('bar').style.width='0%'; setStatus('Campos limpiados.');
+$('parseBtn').onclick=parseText;
+$('clearBtn').onclick=()=>{$('rawText').value='';fieldIds.forEach(id=>$(id).value='');$('recognitionBadges').innerHTML='<span class="badge">A la espera de una imagen</span>';$('bar').style.width='0%';setStatus('Campos limpiados. Elegí otra imagen para comenzar.');
 };
-
-function collect() {
-  const o={}; fieldIds.forEach(id => o[id]=$(id).value.trim());
-  o.rawText=$('rawText').value.trim(); o.savedAt=new Date().toISOString(); return o;
+function collect(){const o={};fieldIds.forEach(id=>o[id]=$(id).value.trim());o.rawText=$('rawText').value.trim();o.savedAt=new Date().toISOString();return o;}
+function loadRecords(){try{return JSON.parse(localStorage.getItem('extintorscan_records')||'[]')}catch(e){return []}}
+function renderRecords(){
+ const records=loadRecords(); const host=$('records');
+ if(!records.length){host.innerHTML='<p class="muted">Todavía no hay fichas guardadas.</p>';return;}
+ host.innerHTML='<table><thead><tr><th>ID</th><th>Fabricante</th><th>Agente</th><th>Recarga/mantenimiento</th><th>Acción</th></tr></thead><tbody>'+
+ records.map((r,i)=>`<tr><td>${esc(r.id||'—')}</td><td>${esc(r.manufacturer||'—')}</td><td>${esc(r.agent||'—')}</td><td>${esc(r.maintenance||'—')}</td><td><button class="secondary" data-load="${i}" type="button">Abrir</button> <button class="secondary" data-delete="${i}" type="button">Borrar</button></td></tr>`).join('')+
+ '</tbody></table>';
+ host.querySelectorAll('[data-load]').forEach(b=>b.onclick=()=>{const r=loadRecords()[+b.dataset.load];fieldIds.forEach(id=>$(id).value=r[id]\vert{}\vert{}'');$('rawText').value=r.rawText||'';currentRecord=r;window.scrollTo({top:0,behavior:'smooth'});setStatus('Ficha cargada para revisar.');});
+ host.querySelectorAll('[data-delete]').forEach(b=>b.onclick=()=>{const a=loadRecords();a.splice(+b.dataset.delete,1);localStorage.setItem('extintorscan_records',JSON.stringify(a));renderRecords();});
 }
-function loadRecords() {
-  try { return JSON.parse(localStorage.getItem('extintorscan_records')||'[]'); } 
-  catch(e) { return []; }
-}
-function renderRecords() {
-  const records = loadRecords(), host = $('records');
-  if (!records.length) { host.innerHTML='<p class="muted">Todavía no hay fichas guardadas.</p>'; return; }
-  host.innerHTML='<table><thead><tr><th>ID</th><th>Fabricante</th><th>Acción</th></tr></thead><tbody>'+
-  records.map((r,i) => `<tr><td>${esc(r.id||'—')}</td><td>${esc(r.manufacturer||'—')}</td><td><button class="secondary" data-load="${i}" type="button">Abrir</button> <button class="secondary" data-delete="${i}" type="button">Borrar</button></td></tr>`).join('')+
-  '</tbody></table>';
-  
-  host.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
-    const r = loadRecords()[+b.dataset.load];
-    fieldIds.forEach(id => $(id).value = r[id]\vert{}\vert{}'');$('rawText').value = r.rawText||'';
-    window.scrollTo({top:0, behavior:'smooth'}); setStatus('Ficha cargada.');
-  });
-  host.querySelectorAll('[data-delete]').forEach(b => b.onclick = () => {
-    const a = loadRecords(); a.splice(+b.dataset.delete, 1);
-    localStorage.setItem('extintorscan_records', JSON.stringify(a)); renderRecords();
-  });
-}
-function esc(s) { return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxv80TOdg9-o2vHTm5aV_nBQKrw2Z6gvAzml63Cvwm_UZL6V27sJXsXuCsCT4YrUSPF/exec';
 
 $('saveBtn').onclick = async () => {
   const r = collect(); 
-  if (!r.id && !r.manufacturer) { setStatus('Completá al menos el ID o fabricante.', 'warn'); return; }
-  
+  if (!r.id && !r.manufacturer) {
+    setStatus('Completá al menos el identificador o el fabricante antes de guardar.', 'warn');
+    return;
+  }
+
+  // 1. Guardar localmente en el navegador
   const a = loadRecords(); 
   const idx = r.id ? a.findIndex(x => x.id === r.id) : -1;
   if (idx >= 0) a[idx] = r; else a.unshift(r);
   localStorage.setItem('extintorscan_records', JSON.stringify(a));
+  currentRecord = r;
   renderRecords();
 
+  // 2. Enviar a la Planilla de Google Sheets
   if (GOOGLE_SCRIPT_URL && !GOOGLE_SCRIPT_URL.includes('AQUI_PEGA')) {
-    setStatus('Enviando a Google Sheets...');
+    setStatus('Guardando ficha en el navegador y enviando a Google Sheets…');
     try {
-      await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r) });
-      setStatus('Ficha guardada en navegador y Sheets.', 'ok');
-    } catch (err) { setStatus('Guardado local (Falló Sheets).', 'warn'); }
-  } else { setStatus('Guardado localmente.', 'ok'); }
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Evita bloqueos de CORS desde el navegador
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(r)
+      });
+      setStatus('Ficha guardada localmente y enviada a Google Sheets con éxito.', 'ok');
+    } catch (err) {
+      setStatus('Se guardó en el navegador, pero falló el envío a Google Sheets.', 'warn');
+    }
+  } else {
+    setStatus('Ficha guardada en este navegador.', 'ok');
+  }
 };
-
-function downloadJSON(data,name) {
-  const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
-}
-$('exportBtn').onclick = () => downloadJSON(collect(),'ficha-extintor.json');
-$('downloadAll').onclick = () => downloadJSON(loadRecords(),'registros-extintorscan.json');$('printBtn').onclick = () => window.print();
+function downloadJSON(data,name){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+$('exportBtn').onclick=()=>downloadJSON(collect(),'ficha-extintor.json');
+$('downloadAll').onclick=()=>downloadJSON(loadRecords(),'registros-extintorscan.json');$('printBtn').onclick=()=>window.print();
 renderRecords();
 </script>
 </body>
