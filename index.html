@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self' https://cdnjs.cloudflare.com;
+                 style-src 'self';
+                 img-src 'self' data: blob:;
+                 media-src 'self' blob:;
+                 connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+                 object-src 'none';
+                 base-uri 'self';">
+  <title>Registro de extintores</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header>
+    <h1>Registro de extintores</h1>
+    <p>Escaneá el QR o el código de barras de la oblea</p>
+  </header>
+
+  <main>
+
+    <!-- 1. Escaneo -->
+    <section class="card">
+      <h2>1. Escanear</h2>
+      <div class="row">
+        <button id="btnStart" class="btn primary" type="button">Activar cámara</button>
+        <button id="btnStop" class="btn" type="button" disabled>Detener</button>
+      </div>
+      <div id="reader"></div>
+      <div class="row">
+        <label class="btn" for="fileInput">Tomar foto de la etiqueta</label>
+        <input id="fileInput" type="file" accept="image/*" capture="environment" class="sr-only">
+      </div>
+      <div id="fileReader" class="sr-only"></div>
+      <p id="status" class="status" role="status" aria-live="polite">Listo para escanear.</p>
+    </section>
+
+    <!-- 2. Formulario -->
+    <section class="card">
+      <h2>2. Datos del extintor</h2>
+      <form id="form" novalidate>
+        <div class="grid">
+          <label>ID del extintor *
+            <input id="f-id" name="id" inputmode="numeric" autocomplete="off" placeholder="81174">
+          </label>
+          <label>Tarjeta/control
+            <input id="f-tarjeta" name="tarjeta" autocomplete="off" placeholder="1041950779">
+          </label>
+          <label>Fabricante
+            <input id="f-fabricante" name="fabricante" autocomplete="off">
+          </label>
+          <label>Recargadora
+            <input id="f-recargadora" name="recargadora" autocomplete="off">
+          </label>
+          <label>Agente
+            <input id="f-agente" name="agente" autocomplete="off" placeholder="Haloclean (HCFC)">
+          </label>
+          <label>Capacidad
+            <input id="f-capacidad" name="capacidad" autocomplete="off" placeholder="5 Kg/Lts">
+          </label>
+          <label>Clases
+            <input id="f-clases" name="clases" autocomplete="off" placeholder="A, B, C">
+          </label>
+          <label>Certificación
+            <input id="f-certificacion" name="certificacion" autocomplete="off">
+          </label>
+          <label>Ubicación
+            <input id="f-ubicacion" name="ubicacion" autocomplete="off">
+          </label>
+          <label>Fabricación (año)
+            <input id="f-fabricacion" name="fabricacion" inputmode="numeric" autocomplete="off" placeholder="2008">
+          </label>
+          <label>Próximo mantenimiento
+            <input id="f-proximo_mantenimiento" name="proximo_mantenimiento" autocomplete="off" placeholder="MM/AAAA">
+          </label>
+          <label>Vida útil
+            <input id="f-vida_util" name="vida_util" autocomplete="off" placeholder="MM/AAAA">
+          </label>
+          <label>Prueba hidráulica
+            <input id="f-prueba_hidraulica" name="prueba_hidraulica" autocomplete="off" placeholder="MM/AAAA">
+          </label>
+        </div>
+
+        <label>Código leído (referencia)
+          <textarea id="raw" rows="2" readonly></textarea>
+        </label>
+
+        <div class="row">
+          <button type="submit" class="btn primary">Guardar registro</button>
+          <button type="button" id="btnClear" class="btn">Limpiar</button>
+        </div>
+        <p id="formMsg" class="status" role="alert"></p>
+      </form>
+    </section>
+
+    <!-- 3. Registros guardados -->
+    <section class="card">
+      <h2>3. Registros guardados (<span id="count">0</span>)</h2>
+      <ul id="list" class="list"></ul>
+      <div class="row">
+        <button id="btnExcel" class="btn primary" type="button">Descargar Excel</button>
+      </div>
+    </section>
+
+    <!-- 4. Google Sheets (opcional) -->
+    <section class="card">
+      <details>
+        <summary>Conexión con Google Sheets</summary>
+        <div class="grid">
+          <label>URL de la Web App
+            <input id="cfgUrl" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec">
+          </label>
+          <label>Clave
+            <input id="cfgToken" type="password" autocomplete="new-password">
+          </label>
+        </div>
+        <div class="row">
+          <button id="btnSaveCfg" class="btn" type="button">Guardar conexión</button>
+        </div>
+      </details>
+      <div class="row">
+        <button id="btnSheets" class="btn primary" type="button">Enviar pendientes a Google Sheets</button>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
