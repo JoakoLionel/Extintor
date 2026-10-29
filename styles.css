@@ -132,13 +132,19 @@ label.btn {
 
 #reader {
   width: 100%;
+  min-height: 280px;
   margin-top: 10px;
   border-radius: 10px;
   overflow: hidden;
   background: #000;
 }
 
-#reader { min-height: 260px; }
+#reader video,
+#reader img,
+#reader canvas {
+  width: 100% !important;
+  height: auto !important;
+}
 
 .status {
   margin: 10px 0 0;

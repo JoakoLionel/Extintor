@@ -40,7 +40,7 @@ const ETIQUETAS = {
   codigo_crudo: "Código leído"
 };
 
-// Nombres (normalizados) que puede tener un dato dentro del QR
+// Nombres (normalizados) que puede tener un dato dentro del QR, para reconocerlo
 const ALIAS = {
   id: ["id", "idextintor", "extintor", "extintorn", "extintornro", "nroextintor", "numeroextintor", "codigo"],
   tarjeta: ["tarjeta", "tarjetacontrol", "control", "tarjetaagc", "nrotarjeta"],
@@ -57,17 +57,6 @@ const ALIAS = {
   prueba_hidraulica: ["pruebahidraulica", "ph", "vencimientoph"]
 };
 
-// Versiones de la foto que se prueban en orden hasta encontrar un código
-const VARIANTES_FOTO = [
-  { max: 1600, rot: 0 },
-  { max: 1600, rot: 90 },
-  { max: 1600, rot: 270 },
-  { max: 2400, rot: 0 },
-  { max: 1600, rot: 0, contraste: true },
-  { max: 1000, rot: 0, contraste: true },
-  { max: 1600, rot: 180 }
-];
-
 const ID_VALIDO = /^[0-9A-Za-z-]{1,20}$/;
 
 /* =========================================================
@@ -77,7 +66,6 @@ const ID_VALIDO = /^[0-9A-Za-z-]{1,20}$/;
 const $ = (id) => document.getElementById(id);
 
 const el = {
-  reader: $("reader"),
   btnStart: $("btnStart"),
   btnStop: $("btnStop"),
   fileInput: $("fileInput"),
@@ -86,6 +74,7 @@ const el = {
   form: $("form"),
   formMsg: $("formMsg"),
   raw: $("raw"),
+  metodo: null, // se crea abajo como campo oculto
   btnClear: $("btnClear"),
   count: $("count"),
   list: $("list"),
@@ -96,17 +85,18 @@ const el = {
   btnSheets: $("btnSheets")
 };
 
-// Campo oculto con el método de lectura (QR, BARCODE_1D, FOTO, CAMARA o MANUAL)
-const metodoInput = document.createElement("input");
-metodoInput.type = "hidden";
-metodoInput.id = "metodo";
-metodoInput.value = "MANUAL";
-el.form.appendChild(metodoInput);
+// Campo oculto con el método de lectura (QR, BARCODE_1D, FOTO o MANUAL)
+el.metodo = document.createElement("input");
+el.metodo.type = "hidden";
+el.metodo.id = "metodo";
+el.metodo.value = "MANUAL";
+el.form.appendChild(el.metodo);
 
 /* =========================================================
    Utilidades
    ========================================================= */
 
+// Quita caracteres de control y recorta longitud
 function limpiar(valor, max = 200) {
   return String(valor ?? "")
     .replace(/[\u0000-\u001F\u007F]/g, " ")
@@ -115,6 +105,7 @@ function limpiar(valor, max = 200) {
     .slice(0, max);
 }
 
+// Normaliza claves: sin tildes, minúsculas y sin símbolos
 function normalizar(texto) {
   return String(texto)
     .normalize("NFD")
@@ -123,6 +114,7 @@ function normalizar(texto) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// Evita que una celda de hoja de cálculo se interprete como fórmula
 function seguroCelda(valor) {
   const s = String(valor ?? "");
   return /^[=+\-@]/.test(s) ? "'" + s : s;
@@ -151,7 +143,7 @@ function mostrarMensajeForm(texto, tipo = "") {
 }
 
 /* =========================================================
-   Almacenamiento local
+   Almacenamiento local (funciona sin conexión)
    ========================================================= */
 
 function cargarRegistros() {
@@ -179,6 +171,7 @@ function cargarConfig() {
    Interpretación del código leído
    ========================================================= */
 
+// Intenta extraer datos de un QR en formato JSON, URL o "campo: valor"
 function parsearCodigo(texto) {
   const t = String(texto).trim();
   let pares = [];
@@ -218,20 +211,19 @@ function parsearCodigo(texto) {
   return resultado;
 }
 
+// Vuelca los datos leídos en el formulario y registra el método usado
 function procesarLectura(texto, metodo) {
   const original = String(texto ?? "");
-  const recortado = original.trim();
   el.raw.value = limpiar(original, 500);
 
   let datos;
-  if (/^\d{3,10}$/.test(recortado)) {
-    // Un número solo (típico del código de barras) es el ID
-    datos = { id: recortado };
+  if (metodo === "BARCODE_1D" && /^\d{3,10}$/.test(original.trim())) {
+    datos = { id: original.trim() };
   } else {
     datos = parsearCodigo(original);
   }
 
-  // Si no se reconoció ningún campo, busca un número de 4 a 6 dígitos
+  // Si no se reconoció ningún campo, busca un número de 4 a 6 dígitos como posible ID
   if (!datos.id) {
     const m = original.match(/\b\d{4,6}\b/);
     if (m) datos.id = m[0];
@@ -240,7 +232,7 @@ function procesarLectura(texto, metodo) {
   for (const campo of CAMPOS_EDITABLES) {
     if (datos[campo]) $("f-" + campo).value = datos[campo];
   }
-  metodoInput.value = metodo;
+  el.metodo.value = metodo;
 
   if (!Object.keys(datos).length) {
     mostrarEstado("Se leyó un código pero no tiene los campos esperados. Revisá el código leído y completá los datos a mano.", "warn");
@@ -249,18 +241,11 @@ function procesarLectura(texto, metodo) {
   }
 }
 
-function metodoDesdeFormato(formato, porDefecto = "CAMARA") {
-  if (formato === "CODE_128") return "BARCODE_1D";
-  if (formato === "QR_CODE") return "QR";
-  return porDefecto;
-}
-
 /* =========================================================
-   Escaneo con cámara
+   Escaneo con cámara y desde foto
    ========================================================= */
 
 let escaner = null;
-let arrancando = false;
 
 function formatosSoportados() {
   return [
@@ -269,33 +254,30 @@ function formatosSoportados() {
   ];
 }
 
-function errorCamara(err) {
-  const texto = `${err?.name || ""} ${err?.message || err || ""}`;
-  if (/NotAllowed|Permission/i.test(texto)) {
-    return "Permiso de cámara denegado. Habilitalo desde el candado de la barra de direcciones y volvé a intentar.";
-  }
-  if (/NotFound|Overconstrained|Requested device/i.test(texto)) {
-    return "No se encontró una cámara en este dispositivo.";
-  }
-  if (/NotReadable|TrackStart|in use/i.test(texto)) {
-    return "La cámara está siendo usada por otra aplicación. Cerrala y volvé a intentar.";
-  }
-  return "No se pudo iniciar la cámara.";
+// Recuadro de escaneo CUADRADO: un QR necesita un área cuadrada para entrar completo.
+// Si fuera rectangular y bajo (como antes), el QR nunca calza y no se lee.
+function calcularRecuadro(anchoVisor, altoVisor) {
+  const lado = Math.floor(Math.min(anchoVisor, altoVisor) * 0.75);
+  const minimo = 180;
+  return { width: Math.max(lado, minimo), height: Math.max(lado, minimo) };
+}
+
+function textoError(err) {
+  if (!err) return "error desconocido";
+  if (typeof err === "string") return err;
+  return err.message || err.name || JSON.stringify(err);
 }
 
 async function activarCamara() {
-  if (arrancando || escaner) return;
-
   if (typeof Html5Qrcode === "undefined") {
-    return mostrarEstado("No se cargó la librería de escaneo. Recargá la página con internet activo.", "error");
+    return mostrarEstado("No se cargó la librería de escaneo. Revisá la conexión a internet y recargá la página.", "error");
   }
-  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    return mostrarEstado("La cámara solo funciona si la página se abre con HTTPS (por ejemplo, la dirección de GitHub Pages), no como archivo local.", "error");
+  if (!window.isSecureContext) {
+    return mostrarEstado("La cámara requiere HTTPS. Si estás probando con un archivo local o http://, usá la dirección de GitHub Pages (https://...).", "error");
   }
 
-  arrancando = true;
   el.btnStart.disabled = true;
-  mostrarEstado("Iniciando cámara...");
+  mostrarEstado("Pidiendo permiso de cámara...");
 
   try {
     escaner = new Html5Qrcode("reader", {
@@ -303,35 +285,45 @@ async function activarCamara() {
       verbose: false
     });
 
-    await escaner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 260, height: 160 } },
-      onLecturaCamara,
-      () => { /* cuadro sin código: no hacer nada */ }
-    );
+    const callbackExito = async (texto, resultado) => {
+      await detenerCamara(true);
+      const formato = resultado?.result?.format?.formatName || "";
+      const metodo = formato === "CODE_128" ? "BARCODE_1D" : "QR";
+      procesarLectura(texto, metodo);
+    };
+    const callbackSinLectura = () => { /* sin lectura en este cuadro: no mostrar nada */ };
+    const config = { fps: 10, qrbox: calcularRecuadro, aspectRatio: 1 };
+
+    try {
+      // Primer intento: cámara trasera por nombre lógico (funciona en la mayoría de los celulares)
+      await escaner.start({ facingMode: { ideal: "environment" } }, config, callbackExito, callbackSinLectura);
+    } catch (err1) {
+      // Segundo intento: listar las cámaras del dispositivo y elegir la trasera por nombre,
+      // o la última de la lista (suele ser la trasera en Android)
+      mostrarEstado(`El primer intento falló (${textoError(err1)}). Probando otra forma de acceder a la cámara...`, "warn");
+      const camaras = await Html5Qrcode.getCameras();
+      if (!camaras || !camaras.length) {
+        throw new Error("no se detectó ninguna cámara en el dispositivo");
+      }
+      const trasera = camaras.find((c) => /back|tras|rear|environment/i.test(c.label)) || camaras[camaras.length - 1];
+      await escaner.start({ deviceId: { exact: trasera.id } }, config, callbackExito, callbackSinLectura);
+    }
 
     el.btnStop.disabled = false;
-    mostrarEstado("Apuntá la cámara al QR o al código de barras.");
+    mostrarEstado("Apuntá la cámara al QR o al código de barras, llenando el recuadro.");
   } catch (err) {
     escaner = null;
     el.btnStart.disabled = false;
-    const detalle = err?.name || err?.message || String(err);
-    mostrarEstado(`${errorCamara(err)} (Detalle: ${detalle})`, "error");
-  } finally {
-    arrancando = false;
+    mostrarEstado(`No se pudo acceder a la cámara: ${textoError(err)}. Revisá que le hayas dado permiso de cámara a esta página, o usá 'Tomar foto de la etiqueta'.`, "error");
   }
-}
-
-async function onLecturaCamara(texto, resultado) {
-  await detenerCamara(true);
-  const formato = resultado?.result?.format?.formatName || "";
-  procesarLectura(texto, metodoDesdeFormato(formato));
 }
 
 async function detenerCamara(silencioso = false) {
   if (escaner) {
-    try { await escaner.stop(); } catch { /* ya estaba detenida */ }
-    try { escaner.clear(); } catch { /* nada que limpiar */ }
+    try {
+      await escaner.stop();
+      escaner.clear();
+    } catch { /* ya estaba detenida */ }
     escaner = null;
   }
   el.btnStart.disabled = false;
@@ -339,112 +331,21 @@ async function detenerCamara(silencioso = false) {
   if (!silencioso) mostrarEstado("Cámara detenida.");
 }
 
-/* =========================================================
-   Lectura desde foto
-   ========================================================= */
-
-function cargarImagen(archivo) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(archivo);
-    const img = new Image();
-    img.onload = () => resolve({ img, url });
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("el archivo no es una imagen válida"));
-    };
-    img.src = url;
-  });
-}
-
-function aplicarContraste(cv) {
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
-  const datos = ctx.getImageData(0, 0, cv.width, cv.height);
-  const px = datos.data;
-  for (let i = 0; i < px.length; i += 4) {
-    const gris = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
-    const v = Math.max(0, Math.min(255, (gris - 128) * 1.8 + 128));
-    px[i] = v;
-    px[i + 1] = v;
-    px[i + 2] = v;
-  }
-  ctx.putImageData(datos, 0, 0);
-}
-
-function dibujarVariante(img, { max, rot, contraste = false }) {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
-  const escala = Math.min(1, max / Math.max(w, h));
-  const dw = Math.round(w * escala);
-  const dh = Math.round(h * escala);
-  const girado = rot === 90 || rot === 270;
-
-  const cv = document.createElement("canvas");
-  cv.width = girado ? dh : dw;
-  cv.height = girado ? dw : dh;
-
-  const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.translate(cv.width / 2, cv.height / 2);
-  ctx.rotate((rot * Math.PI) / 180);
-  ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  if (contraste) aplicarContraste(cv);
-  return cv;
-}
-
-function canvasAArchivo(cv) {
-  return new Promise((resolve, reject) => {
-    cv.toBlob((blob) => {
-      if (blob) resolve(new File([blob], "etiqueta.png", { type: "image/png" }));
-      else reject(new Error("no se pudo preparar la imagen"));
-    }, "image/png");
-  });
-}
-
-async function escanearArchivo(lector, archivo) {
-  if (typeof lector.scanFileV2 === "function") {
-    const r = await lector.scanFileV2(archivo, false);
-    return { texto: r.decodedText, formato: r.result?.format?.formatName || "" };
-  }
-  const texto = await lector.scanFile(archivo, false);
-  return { texto, formato: "" };
-}
-
 async function leerFoto(archivo) {
   if (typeof Html5Qrcode === "undefined") {
-    return mostrarEstado("No se cargó la librería de escaneo. Recargá la página con internet activo.", "error");
+    return mostrarEstado("No se cargó la librería de escaneo.", "error");
   }
   await detenerCamara(true);
-
-  let url = null;
   try {
-    const cargada = await cargarImagen(archivo);
-    url = cargada.url;
     const lector = new Html5Qrcode("fileReader", {
       formatsToSupport: formatosSoportados(),
       verbose: false
     });
-
-    for (let i = 0; i < VARIANTES_FOTO.length; i++) {
-      mostrarEstado(`Buscando código en la foto (intento ${i + 1} de ${VARIANTES_FOTO.length})...`);
-      const cv = dibujarVariante(cargada.img, VARIANTES_FOTO[i]);
-      const archivoVariante = await canvasAArchivo(cv);
-
-      try {
-        const r = await escanearArchivo(lector, archivoVariante);
-        procesarLectura(r.texto, metodoDesdeFormato(r.formato, "FOTO"));
-        return;
-      } catch {
-        // no encontró código en esta variante: seguir con la próxima
-      }
-    }
-
-    mostrarEstado("No se encontró ningún código en la foto. Probá acercándote, con más luz y sin reflejos, o cargá los datos a mano.", "warn");
+    const texto = await lector.scanFile(archivo, false);
+    procesarLectura(texto, "FOTO");
   } catch (err) {
-    const detalle = err?.message || String(err);
-    mostrarEstado(`No se pudo procesar la foto: ${detalle}`, "error");
+    mostrarEstado(`No se encontró ningún código en la foto (${textoError(err)}). Probá sacarla más de cerca, con más luz y sin reflejos, o cargá los datos a mano.`, "warn");
   } finally {
-    if (url) URL.revokeObjectURL(url);
     el.fileInput.value = "";
   }
 }
@@ -463,7 +364,7 @@ function leerFormulario() {
 
 function limpiarFormulario() {
   for (const campo of CAMPOS_EDITABLES) $("f-" + campo).value = "";
-  metodoInput.value = "MANUAL";
+  el.metodo.value = "MANUAL";
   el.raw.value = "";
   el.formMsg.textContent = "";
   el.formMsg.className = "status";
@@ -484,7 +385,7 @@ function guardarRegistro(evento) {
   const nuevo = {
     fecha_guardada: fechaTexto(new Date()),
     ...datos,
-    metodo: metodoInput.value || "MANUAL",
+    metodo: el.metodo.value || "MANUAL",
     codigo_crudo: limpiar(el.raw.value, 500),
     _enviado: false
   };
@@ -595,7 +496,7 @@ function exportarExcel() {
 }
 
 /* =========================================================
-   Google Sheets (Apps Script)
+   Envío a Google Sheets (Apps Script)
    ========================================================= */
 
 function aFila(registro) {
@@ -668,12 +569,12 @@ async function enviarPendientes() {
 
 el.btnStart.addEventListener("click", activarCamara);
 el.btnStop.addEventListener("click", () => detenerCamara());
-
 el.fileInput.addEventListener("change", (e) => {
   const archivo = e.target.files[0];
   if (archivo) leerFoto(archivo);
 });
 
+// Apaga la cámara al cambiar de aplicación o pestaña
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) detenerCamara(true);
 });
@@ -685,19 +586,6 @@ el.btnExcel.addEventListener("click", exportarExcel);
 el.btnSaveCfg.addEventListener("click", guardarConfig);
 el.btnSheets.addEventListener("click", enviarPendientes);
 
-/* =========================================================
-   Inicio
-   ========================================================= */
-
-function verificarLibrerias() {
-  const faltan = [];
-  if (typeof Html5Qrcode === "undefined") faltan.push("escáner");
-  if (typeof XLSX === "undefined") faltan.push("Excel");
-  if (faltan.length) {
-    mostrarEstado(`No se cargó: ${faltan.join(" y ")}. Revisá tu conexión a internet y recargá la página.`, "error");
-  }
-}
-
+// Inicialización
 cargarConfigEnFormulario();
 renderLista();
-verificarLibrerias();
