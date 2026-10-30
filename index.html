@@ -13,7 +13,7 @@
                  object-src 'none';
                  base-uri 'self';">
   <title>Registro de extintores</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
 
@@ -31,13 +31,20 @@
         <button id="btnStart" class="btn primary" type="button">Activar cámara</button>
         <button id="btnStop" class="btn" type="button" disabled>Detener</button>
       </div>
-      <div id="reader"></div>
+      <div id="visor" class="visor" hidden>
+        <video id="video" playsinline muted autoplay></video>
+        <div class="mira"></div>
+      </div>
       <div class="row">
         <label class="btn" for="fileInput">Tomar foto de la etiqueta</label>
         <input id="fileInput" type="file" accept="image/*" capture="environment" class="sr-only">
       </div>
       <div id="fileReader" class="sr-only"></div>
       <p id="status" class="status" role="status" aria-live="polite">Listo para escanear.</p>
+      <div class="row">
+        <button id="btnDiag" class="btn small" type="button">Diagnóstico</button>
+      </div>
+      <pre id="diag" class="diag" hidden></pre>
     </section>
 
     <!-- 2. Formulario -->
@@ -132,6 +139,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
