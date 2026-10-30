@@ -66,6 +66,9 @@ const ID_VALIDO = /^[0-9A-Za-z-]{1,20}$/;
 const $ = (id) => document.getElementById(id);
 
 const el = {
+  fichaAgc: $("fichaAgc"),
+  linkAgc: $("linkAgc"),
+  ocrInput: $("ocrInput"),
   visor: $("visor"),
   video: $("video"),
   btnDiag: $("btnDiag"),
@@ -215,20 +218,48 @@ function parsearCodigo(texto) {
   return resultado;
 }
 
+// Si el QR es un link a la ficha de AGC, devuelve la URL validada
+// (solo http/https y solo el dominio agcontrol.gob.ar). Si no, devuelve null.
+function urlFichaAgc(texto) {
+  try {
+    const u = new URL(String(texto).trim());
+    const dominioOk = u.hostname === "agcontrol.gob.ar" || u.hostname.endsWith(".agcontrol.gob.ar");
+    const protocoloOk = u.protocol === "https:" || u.protocol === "http:";
+    return protocoloOk && dominioOk ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function mostrarFichaAgc(url) {
+  el.linkAgc.href = url;
+  el.fichaAgc.hidden = false;
+}
+
+function ocultarFichaAgc() {
+  el.linkAgc.removeAttribute("href");
+  el.fichaAgc.hidden = true;
+}
+
 // Vuelca los datos leídos en el formulario y registra el método usado
 function procesarLectura(texto, metodo) {
   const original = String(texto ?? "");
+  const recortado = original.trim();
   el.raw.value = limpiar(original, 500);
 
+  const urlAgc = urlFichaAgc(recortado);
+  const esUrl = /^https?:\/\//i.test(recortado);
+
   let datos;
-  if (metodo === "BARCODE_1D" && /^\d{3,10}$/.test(original.trim())) {
-    datos = { id: original.trim() };
+  if (metodo === "BARCODE_1D" && /^\d{3,10}$/.test(recortado)) {
+    datos = { id: recortado };
   } else {
     datos = parsearCodigo(original);
   }
 
-  // Si no se reconoció ningún campo, busca un número de 4 a 6 dígitos como posible ID
-  if (!datos.id) {
+  // Sin campos reconocidos: se busca un número de 4 a 6 dígitos como posible ID.
+  // No se hace con un link, porque los números sueltos de una URL no son el ID.
+  if (!datos.id && !esUrl) {
     const m = original.match(/\b\d{4,6}\b/);
     if (m) datos.id = m[0];
   }
@@ -238,6 +269,13 @@ function procesarLectura(texto, metodo) {
   }
   el.metodo.value = metodo;
 
+  if (urlAgc) {
+    mostrarFichaAgc(urlAgc);
+    mostrarEstado("QR leído: es un link a la ficha de AGC, que muestra los datos como imagen. Tocá 'Abrir ficha de AGC', hacé zoom en la tabla, sacá una captura de pantalla y subila con 'Leer ficha AGC desde captura'.", "ok");
+    return;
+  }
+
+  ocultarFichaAgc();
   if (!Object.keys(datos).length) {
     mostrarEstado("Se leyó un código pero no tiene los campos esperados. Revisá el código leído y completá los datos a mano.", "warn");
   } else {
@@ -249,7 +287,7 @@ function procesarLectura(texto, metodo) {
    Escaneo con cámara y desde foto
    ========================================================= */
 
-const VERSION = "v3";
+const VERSION = "v4";
 
 let stream = null;
 let detector = null;
@@ -424,6 +462,7 @@ async function diagnostico() {
   }
   l.push("jsQR cargada: " + (typeof jsQR !== "undefined"));
   l.push("html5-qrcode cargada: " + (typeof Html5Qrcode !== "undefined"));
+  l.push("OCR (Tesseract) cargado: " + (typeof Tesseract !== "undefined"));
   l.push("Excel (XLSX) cargada: " + (typeof XLSX !== "undefined"));
 
   try {
@@ -584,6 +623,236 @@ async function leerFoto(archivo) {
 }
 
 /* =========================================================
+   Ficha de AGC: lectura con OCR de una captura de pantalla
+   ========================================================= */
+
+// Etiquetas de la ficha (se buscan en minúsculas y sin tildes).
+// Las que empiezan con "_" son datos que la ficha trae pero que la planilla no guarda.
+const ETIQUETAS_FICHA = [
+  { campo: "ubicacion",             re: /domicilio\s*(de\s*)?instalaci[o0]n/ },
+  { campo: "recargadora",           re: /empresa\s*recargadora/ },
+  { campo: "proximo_mantenimiento", re: /fecha\s*vencimiento\s*mantenimiento/ },
+  { campo: "vida_util",             re: /fecha\s*vencimiento\s*vida\s*util/ },
+  { campo: "tarjeta",               re: /\bn\S{0,3}\s*tarjeta/ },
+  { campo: "capacidad",             re: /capacidad/ },
+  { campo: "_uso",                  re: /\buso\b/ },
+  { campo: "fabricante",            re: /empresa\s*fabricante/ },
+  { campo: "_ultimo_mantenimiento", re: /fecha\s*mantenimiento/ },
+  { campo: "fabricacion",           re: /fecha\s*fabricaci[o0]n/ },
+  { campo: "prueba_hidraulica",     re: /fecha\s*vencimiento\s*(ph|p\.h\.|prueba)/ },
+  { campo: "agente",                re: /agente\s*extintor/ },
+  { campo: "id",                    re: /\bn\S{0,3}\s*extintor/ }
+];
+
+// Campos que la ficha de AGC puede aportar
+const CAMPOS_FICHA = [
+  "id", "tarjeta", "fabricante", "recargadora", "agente", "capacidad",
+  "ubicacion", "fabricacion", "proximo_mantenimiento", "vida_util", "prueba_hidraulica"
+];
+
+// Un carácter -> el mismo carácter sin tilde y en minúscula (siempre 1 a 1, para no desfasar posiciones)
+function aplanarCaracter(c) {
+  const base = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "") || " ";
+  return base[0].toLowerCase()[0] || " ";
+}
+
+// El OCR suele confundir O con 0 y l/I con 1 dentro de números
+function corregirDigitos(v) {
+  return v.replace(/[oO]/g, "0").replace(/[lI|]/g, "1");
+}
+
+function limpiarValorFicha(v) {
+  return limpiar(String(v).replace(/[|_]+/g, " ").replace(/^[\s:.\-]+/, ""), 120);
+}
+
+function extraerFecha(v, permitirSoloAnio = false) {
+  const t = corregirDigitos(v);
+  const m = t.match(/(\d{1,2})\s*[\/\-.]\s*(\d{4})/);
+  if (m) return `${m[1].padStart(2, "0")}/${m[2]}`;
+  if (permitirSoloAnio) {
+    const a = t.match(/\b(19|20)\d{2}\b/);
+    if (a) return a[0];
+  }
+  return "";
+}
+
+// Recibe el texto que devolvió el OCR y devuelve { campo: valor } con lo que pudo reconocer
+function parsearFichaAgc(texto) {
+  const original = String(texto ?? "")
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, " ")
+    .replace(/\s/g, " ");
+  const plano = Array.from(original).map(aplanarCaracter).join("");
+
+  const hallazgos = [];
+  for (const { campo, re } of ETIQUETAS_FICHA) {
+    const m = re.exec(plano);
+    if (m) hallazgos.push({ campo, inicio: m.index, fin: m.index + m[0].length });
+  }
+  hallazgos.sort((a, b) => a.inicio - b.inicio);
+
+  const datos = {};
+  hallazgos.forEach((h, i) => {
+    // El valor de cada etiqueta llega hasta la etiqueta siguiente
+    const hasta = i + 1 < hallazgos.length
+      ? hallazgos[i + 1].inicio
+      : Math.min(original.length, h.fin + 60);
+    const valor = limpiarValorFicha(original.slice(h.fin, hasta));
+    if (!valor) return;
+
+    switch (h.campo) {
+      case "id": {
+        const m = corregirDigitos(valor).match(/\d{3,8}/);
+        if (m) datos.id = m[0];
+        break;
+      }
+      case "tarjeta": {
+        const m = corregirDigitos(valor).match(/\d[\d ]{5,}\d/);
+        if (m) datos.tarjeta = m[0].replace(/ /g, "");
+        break;
+      }
+      case "proximo_mantenimiento":
+      case "vida_util":
+      case "prueba_hidraulica": {
+        const f = extraerFecha(valor);
+        if (f) datos[h.campo] = f;
+        break;
+      }
+      case "fabricacion": {
+        const f = extraerFecha(valor, true);
+        if (f) datos.fabricacion = f;
+        break;
+      }
+      case "capacidad": {
+        const m = valor.match(/(\d+(?:[.,]\d+)?)\s*kg\s*\/\s*l\w*/i);
+        const m2 = valor.match(/(\d+(?:[.,]\d+)?)\s*kg/i);
+        datos.capacidad = m ? `${m[1]} Kg/Lts` : (m2 ? `${m2[1]} Kg` : limpiar(valor, 25));
+        break;
+      }
+      case "ubicacion":
+      case "recargadora":
+      case "fabricante":
+      case "agente":
+        if (valor.length >= 2) datos[h.campo] = valor.slice(0, 80);
+        break;
+      default:
+        break; // datos que no se guardan
+    }
+  });
+  return datos;
+}
+
+const ESTADOS_OCR = {
+  "loading tesseract core": "cargando el motor",
+  "initializing tesseract": "iniciando",
+  "initialized tesseract": "iniciado",
+  "loading language traineddata": "descargando el idioma",
+  "loaded language traineddata": "idioma cargado",
+  "initializing api": "iniciando",
+  "initialized api": "listo",
+  "recognizing text": "leyendo la ficha"
+};
+
+let ocrWorker = null;
+
+async function crearOcr() {
+  if (typeof Tesseract === "undefined") {
+    throw new Error("no se cargó la librería de OCR; revisá la conexión a internet y recargá la página");
+  }
+  if (!ocrWorker) {
+    ocrWorker = await Tesseract.createWorker("spa", 1, {
+      logger: (m) => {
+        if (!m || !m.status) return;
+        const pct = typeof m.progress === "number" ? ` ${Math.round(m.progress * 100)}%` : "";
+        mostrarEstado(`OCR: ${ESTADOS_OCR[m.status] || m.status}${pct}`);
+      }
+    });
+  }
+  return ocrWorker;
+}
+
+// El texto de la ficha es muy chico: se agranda, se pasa a grises y se sube el contraste
+function prepararParaOcr(img) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  let escala = Math.min(4, Math.max(1, 2000 / w));
+  escala = Math.max(1, Math.min(escala, 5000 / h));
+
+  const cv = document.createElement("canvas");
+  cv.width = Math.round(w * escala);
+  cv.height = Math.round(h * escala);
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  aplicarContraste(cv);
+  return cv;
+}
+
+function aplicarDatosFicha(datos) {
+  const campos = Object.keys(datos).filter((k) => !k.startsWith("_"));
+  if (!campos.length) {
+    return mostrarEstado("No se pudo reconocer ningún dato en la imagen. Probá con una captura más grande (hacé zoom en la tabla antes de sacarla) o completá a mano.", "warn");
+  }
+
+  // Control de seguridad: la ficha tiene que ser del mismo extintor que ya está cargado
+  const idActual = limpiar($("f-id").value);
+  if (datos.id && idActual && datos.id !== idActual) {
+    return mostrarEstado(`La ficha es del extintor ${datos.id}, pero tenés cargado el ${idActual}. No se completó nada: revisá que sea el mismo extintor.`, "error");
+  }
+
+  for (const campo of campos) {
+    const input = $("f-" + campo);
+    if (!input) continue;
+    input.value = datos[campo];
+    input.classList.add("ocr-revisar");
+  }
+  el.metodo.value = el.metodo.value === "QR" ? "QR+OCR" : "OCR_FICHA";
+
+  const noLeidos = CAMPOS_FICHA.filter((c) => !datos[c]).map((c) => ETIQUETAS[c]);
+  let texto = `Se completaron ${campos.length} de ${CAMPOS_FICHA.length} campos (marcados en amarillo). Comparalos con la ficha antes de guardar: el OCR puede equivocarse. Clases de fuego y certificación van a mano.`;
+  if (noLeidos.length) texto += ` No se leyó: ${noLeidos.join(", ")}.`;
+  if (!datos.id && idActual) texto += " No se pudo verificar que la ficha sea de este extintor.";
+  mostrarEstado(texto, noLeidos.length ? "warn" : "ok");
+}
+
+async function leerFichaAgc(archivo) {
+  await detenerCamara(true);
+
+  let url = null;
+  try {
+    mostrarEstado("Preparando la imagen...");
+    const cargada = await cargarImagen(archivo);
+    url = cargada.url;
+    const cv = prepararParaOcr(cargada.img);
+    const worker = await crearOcr();
+
+    let datos = {};
+    let textoOcr = "";
+    // Modo 6: lee línea por línea (conserva cada etiqueta junto a su valor). Modo 4 de respaldo.
+    for (const modo of ["6", "4"]) {
+      await worker.setParameters({ tessedit_pageseg_mode: modo });
+      const resultado = await worker.recognize(cv);
+      textoOcr = (resultado && resultado.data && resultado.data.text) || "";
+      datos = parsearFichaAgc(textoOcr);
+      if (Object.keys(datos).length >= 6) break;
+    }
+
+    aplicarDatosFicha(datos);
+
+    // Si casi no se reconoció nada, se muestra el texto crudo para poder diagnosticar
+    if (Object.keys(datos).length < 3) {
+      el.diag.textContent = "Texto que leyó el OCR:\n" + (textoOcr.trim() || "(vacío)");
+      el.diag.hidden = false;
+    }
+  } catch (err) {
+    mostrarEstado(`No se pudo leer la ficha: ${textoError(err)}. El OCR necesita internet la primera vez (descarga el idioma). Tocá 'Diagnóstico' si sigue fallando.`, "error");
+  } finally {
+    if (url) URL.revokeObjectURL(url);
+    el.ocrInput.value = "";
+  }
+}
+
+/* =========================================================
    Formulario
    ========================================================= */
 
@@ -596,9 +865,13 @@ function leerFormulario() {
 }
 
 function limpiarFormulario() {
-  for (const campo of CAMPOS_EDITABLES) $("f-" + campo).value = "";
+  for (const campo of CAMPOS_EDITABLES) {
+    $("f-" + campo).value = "";
+    $("f-" + campo).classList.remove("ocr-revisar");
+  }
   el.metodo.value = "MANUAL";
   el.raw.value = "";
+  ocultarFichaAgc();
   el.formMsg.textContent = "";
   el.formMsg.className = "status";
 }
@@ -803,6 +1076,12 @@ async function enviarPendientes() {
 el.btnStart.addEventListener("click", activarCamara);
 el.btnStop.addEventListener("click", () => detenerCamara());
 el.btnDiag.addEventListener("click", diagnostico);
+el.ocrInput.addEventListener("change", (e) => {
+  const archivo = e.target.files[0];
+  if (archivo) leerFichaAgc(archivo);
+});
+// Al editar un campo marcado por el OCR, se quita la marca amarilla
+el.form.addEventListener("input", (e) => e.target.classList.remove("ocr-revisar"));
 el.fileInput.addEventListener("change", (e) => {
   const archivo = e.target.files[0];
   if (archivo) leerFoto(archivo);

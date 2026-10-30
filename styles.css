@@ -218,3 +218,12 @@ details label { margin-top: 10px; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+[hidden] { display: none !important; }
+
+a.btn { text-decoration: none; }
+
+.ocr-revisar {
+  background: #fff8e1;
+  border-color: #f0b429;
+}

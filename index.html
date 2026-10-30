@@ -5,15 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
-                 script-src 'self' https://cdnjs.cloudflare.com;
+                 script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net 'wasm-unsafe-eval';
+                 worker-src 'self' blob:;
                  style-src 'self';
                  img-src 'self' data: blob:;
                  media-src 'self' blob:;
-                 connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+                 connect-src 'self' https://script.google.com https://script.googleusercontent.com https://cdn.jsdelivr.net https://tessdata.projectnaptha.com;
                  object-src 'none';
                  base-uri 'self';">
   <title>Registro de extintores</title>
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 
@@ -41,6 +42,13 @@
       </div>
       <div id="fileReader" class="sr-only"></div>
       <p id="status" class="status" role="status" aria-live="polite">Listo para escanear.</p>
+      <div id="fichaAgc" class="row" hidden>
+        <a id="linkAgc" class="btn primary" target="_blank" rel="noopener noreferrer">Abrir ficha de AGC</a>
+      </div>
+      <div class="row">
+        <label class="btn" for="ocrInput">Leer ficha AGC desde captura</label>
+        <input id="ocrInput" type="file" accept="image/*" class="sr-only">
+      </div>
       <div class="row">
         <button id="btnDiag" class="btn small" type="button">Diagnóstico</button>
       </div>
@@ -139,7 +147,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
-  <script src="app.js?v=3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
