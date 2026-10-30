@@ -279,35 +279,41 @@ async function activarCamara() {
   el.btnStart.disabled = true;
   mostrarEstado("Pidiendo permiso de cámara...");
 
+  const callbackExito = async (texto, resultado) => {
+    await detenerCamara(true);
+    const formato = resultado?.result?.format?.formatName || "";
+    const metodo = formato === "CODE_128" ? "BARCODE_1D" : "QR";
+    procesarLectura(texto, metodo);
+  };
+  const callbackSinLectura = () => { /* sin lectura en este cuadro: no mostrar nada */ };
+  const config = { fps: 10, qrbox: calcularRecuadro, aspectRatio: 1 };
+
   try {
-    escaner = new Html5Qrcode("reader", {
-      formatsToSupport: formatosSoportados(),
-      verbose: false
-    });
+    // Primer intento: cámara trasera por nombre lógico (funciona en la mayoría de los celulares)
+    escaner = new Html5Qrcode("reader", { formatsToSupport: formatosSoportados(), verbose: false });
+    await escaner.start({ facingMode: { ideal: "environment" } }, config, callbackExito, callbackSinLectura);
 
-    const callbackExito = async (texto, resultado) => {
-      await detenerCamara(true);
-      const formato = resultado?.result?.format?.formatName || "";
-      const metodo = formato === "CODE_128" ? "BARCODE_1D" : "QR";
-      procesarLectura(texto, metodo);
-    };
-    const callbackSinLectura = () => { /* sin lectura en este cuadro: no mostrar nada */ };
-    const config = { fps: 10, qrbox: calcularRecuadro, aspectRatio: 1 };
+    el.btnStop.disabled = false;
+    mostrarEstado("Apuntá la cámara al QR o al código de barras, llenando el recuadro.");
+    return;
+  } catch (err1) {
+    // Se descarta la instancia anterior y se crea una NUEVA para el segundo intento.
+    // Reusar la misma instancia después de un fallo es lo que provoca
+    // el error "Cannot transition to a new state, already under transition".
+    try { escaner && escaner.clear(); } catch { /* nada que limpiar */ }
+    escaner = null;
+    mostrarEstado(`El primer intento falló (${textoError(err1)}). Probando otra forma de acceder a la cámara...`, "warn");
+  }
 
-    try {
-      // Primer intento: cámara trasera por nombre lógico (funciona en la mayoría de los celulares)
-      await escaner.start({ facingMode: { ideal: "environment" } }, config, callbackExito, callbackSinLectura);
-    } catch (err1) {
-      // Segundo intento: listar las cámaras del dispositivo y elegir la trasera por nombre,
-      // o la última de la lista (suele ser la trasera en Android)
-      mostrarEstado(`El primer intento falló (${textoError(err1)}). Probando otra forma de acceder a la cámara...`, "warn");
-      const camaras = await Html5Qrcode.getCameras();
-      if (!camaras || !camaras.length) {
-        throw new Error("no se detectó ninguna cámara en el dispositivo");
-      }
-      const trasera = camaras.find((c) => /back|tras|rear|environment/i.test(c.label)) || camaras[camaras.length - 1];
-      await escaner.start({ deviceId: { exact: trasera.id } }, config, callbackExito, callbackSinLectura);
+  try {
+    const camaras = await Html5Qrcode.getCameras();
+    if (!camaras || !camaras.length) {
+      throw new Error("no se detectó ninguna cámara en el dispositivo");
     }
+    const trasera = camaras.find((c) => /back|tras|rear|environment/i.test(c.label)) || camaras[camaras.length - 1];
+
+    escaner = new Html5Qrcode("reader", { formatsToSupport: formatosSoportados(), verbose: false });
+    await escaner.start({ deviceId: { exact: trasera.id } }, config, callbackExito, callbackSinLectura);
 
     el.btnStop.disabled = false;
     mostrarEstado("Apuntá la cámara al QR o al código de barras, llenando el recuadro.");
@@ -331,21 +337,109 @@ async function detenerCamara(silencioso = false) {
   if (!silencioso) mostrarEstado("Cámara detenida.");
 }
 
+// Variantes que se prueban en orden sobre la misma foto, hasta encontrar un código.
+// La primera es a resolución ORIGINAL (sin achicar), clave para QR muy densos o gastados.
+const VARIANTES_FOTO = [
+  { max: 4000, rot: 0 },
+  { max: 4000, rot: 0, contraste: true },
+  { max: 1600, rot: 0 },
+  { max: 1600, rot: 0, contraste: true },
+  { max: 1600, rot: 90 },
+  { max: 1600, rot: 270 },
+  { max: 1000, rot: 0, contraste: true }
+];
+
+function cargarImagen(archivo) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(archivo);
+    const img = new Image();
+    img.onload = () => resolve({ img, url });
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("el archivo no es una imagen válida"));
+    };
+    img.src = url;
+  });
+}
+
+function aplicarContraste(cv) {
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  const datos = ctx.getImageData(0, 0, cv.width, cv.height);
+  const px = datos.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const gris = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    const v = Math.max(0, Math.min(255, (gris - 128) * 1.8 + 128));
+    px[i] = v; px[i + 1] = v; px[i + 2] = v;
+  }
+  ctx.putImageData(datos, 0, 0);
+}
+
+function dibujarVariante(img, { max, rot, contraste = false }) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const escala = Math.min(1, max / Math.max(w, h));
+  const dw = Math.round(w * escala);
+  const dh = Math.round(h * escala);
+  const girado = rot === 90 || rot === 270;
+
+  const cv = document.createElement("canvas");
+  cv.width = girado ? dh : dw;
+  cv.height = girado ? dw : dh;
+
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.translate(cv.width / 2, cv.height / 2);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  if (contraste) aplicarContraste(cv);
+  return cv;
+}
+
+function canvasAArchivo(cv) {
+  return new Promise((resolve, reject) => {
+    cv.toBlob((blob) => {
+      if (blob) resolve(new File([blob], "etiqueta.png", { type: "image/png" }));
+      else reject(new Error("no se pudo preparar la imagen"));
+    }, "image/png");
+  });
+}
+
 async function leerFoto(archivo) {
   if (typeof Html5Qrcode === "undefined") {
     return mostrarEstado("No se cargó la librería de escaneo.", "error");
   }
   await detenerCamara(true);
+
+  let url = null;
   try {
-    const lector = new Html5Qrcode("fileReader", {
-      formatsToSupport: formatosSoportados(),
-      verbose: false
-    });
-    const texto = await lector.scanFile(archivo, false);
-    procesarLectura(texto, "FOTO");
+    const cargada = await cargarImagen(archivo);
+    url = cargada.url;
+
+    for (let i = 0; i < VARIANTES_FOTO.length; i++) {
+      mostrarEstado(`Buscando código en la foto (intento ${i + 1} de ${VARIANTES_FOTO.length})...`);
+      const cv = dibujarVariante(cargada.img, VARIANTES_FOTO[i]);
+      const archivoVariante = await canvasAArchivo(cv);
+
+      // Se crea un lector NUEVO en cada intento: reusar el mismo después de un
+      // intento sin resultado puede dejarlo en mal estado (igual que con la cámara).
+      const lector = new Html5Qrcode("fileReader", { formatsToSupport: formatosSoportados(), verbose: false });
+      try {
+        const texto = await lector.scanFile(archivoVariante, false);
+        procesarLectura(texto, "FOTO");
+        return;
+      } catch {
+        // esta variante no encontró código: se prueba la siguiente
+      } finally {
+        try { lector.clear(); } catch { /* nada que limpiar */ }
+      }
+    }
+
+    mostrarEstado("No se encontró ningún código en la foto después de varios intentos. Probá sacarla más de cerca, con más luz y sin reflejos, o cargá los datos a mano.", "warn");
   } catch (err) {
-    mostrarEstado(`No se encontró ningún código en la foto (${textoError(err)}). Probá sacarla más de cerca, con más luz y sin reflejos, o cargá los datos a mano.`, "warn");
+    mostrarEstado(`No se pudo procesar la foto: ${textoError(err)}`, "error");
   } finally {
+    if (url) URL.revokeObjectURL(url);
     el.fileInput.value = "";
   }
 }
